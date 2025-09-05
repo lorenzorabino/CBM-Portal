@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>CBM Technicians</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <h2>CBM Technicians</h2>
+    <form method="get">
+    <script src="/static/main.js" defer></script>
+        <input type="text" name="search" placeholder="Search by Name" value="{{ search }}">
+        <button type="submit">Search</button>
+    </form>
+    <table border="1" cellpadding="5">
+        <thead>
+            <tr>
+                <th><a href="?search={{ search }}&sort=CBM_ID&direction={{ 'desc' if sort == 'CBM_ID' and direction == 'asc' else 'asc' }}">CBM_ID</a></th>
+                <th><a href="?search={{ search }}&sort=Name&direction={{ 'desc' if sort == 'Name' and direction == 'asc' else 'asc' }}">Name</a></th>
+                <th><a href="?search={{ search }}&sort=Expertise&direction={{ 'desc' if sort == 'Expertise' and direction == 'asc' else 'asc' }}">Expertise</a></th>
+                <th><a href="?search={{ search }}&sort=Email&direction={{ 'desc' if sort == 'Email' and direction == 'asc' else 'asc' }}">Email</a></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for tech in technicians %}
+            <tr>
+                <td>{{ tech.CBM_ID }}</td>
+                <td>{{ tech.Name }}</td>
+                <td>{{ tech.Expertise }}</td>
+                <td>{{ tech.Email }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</body>
+</html>

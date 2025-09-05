@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Add Test Record</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <h2>Add Test Record</h2>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, msg in messages %}
+          <div style="color: {% if category == 'success' %}green{% else %}red{% endif %};">{{ msg }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+    <form method="post">
+        <label>Technician:</label>
+        <select name="technician">
+            <option value="">Select Technician</option>
+            {% for tech in technicians %}
+            <option value="{{ tech.CBM_ID }}">{{ tech.Name }}</option>
+            {% endfor %}
+        </select><br>
+        <label>Equipment:</label>
+        <select name="equipment">
+            <option value="">Select Equipment</option>
+            {% for eq in equipments %}
+            <option value="{{ eq.EquipmentID }}">{{ eq.Machine }}</option>
+            {% endfor %}
+        </select><br>
+        <label>Test Date:</label>
+        <input type="date" name="test_date"><br>
+        <label>Result:</label>
+        <input type="text" name="result"><br><br>
+        <button type="submit">Save</button>
+    </form>
+    <a href="/testing_records">View All Test Records</a>
+</body>
+</html>
