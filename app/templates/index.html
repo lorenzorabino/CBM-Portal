@@ -121,15 +121,15 @@
                     </label>
                 </div>
                 <div style="display:flex; align-items:center; gap:12px;">
-                    <div class="kpi-scope-hint" aria-live="polite" style="font-size:.9rem; color:#64748b;">Current Date:</div>
-                    <div id="kpi-date-indicator" class="date-indicator" aria-live="polite">
+            <div class="kpi-scope-hint" aria-live="polite" style="font-size:.9rem; color:#64748b;">PM Date:</div>
+                    <div id="kpi-date-indicator" class="date-indicator" aria-live="polite" data-pm-date="{{ sel_pm_date or '' }}">
                         <div class="date-left">
-                            <div id="date-indicator-date" class="date-indicator-date">—</div>
-                            <div id="date-indicator-day" class="date-indicator-day">—</div>
+                <div id="date-indicator-date" class="date-indicator-date">{{ sel_pm_date or '—' }}</div>
+                            <div id="date-indicator-day" class="date-indicator-day">{{ sel_pm_day or '—' }}</div>
                         </div>
                         <div class="date-right">
                             <div class="date-week-label">Week</div>
-                            <div id="date-indicator-week" class="date-indicator-week">W--</div>
+                            <div id="date-indicator-week" class="date-indicator-week">{{ sel_week and ('W%02d %d'|format(sel_week, sel_year)) or 'W--' }}</div>
                         </div>
                     </div>
                 </div>
@@ -192,7 +192,7 @@
                                 <article class="equipment-card" role="group" aria-label="Equipment {{ e.equipment }}">
                                     <div class="eq-head">
                                         <div class="eq-title">{{ e.equipment or ('#' ~ e.id) }}</div>
-                                        <div class="eq-meta">{{ e.department or '' }}</div>
+                                        <div class="eq-meta">{{ e.department or '' }}{% if e.pm_date %} • PM: {{ e.pm_date }}{% endif %}</div>
                                     </div>
                                     <div class="eq-body">
                                         <div class="progress eq-progress" title="{{ pct }}%">

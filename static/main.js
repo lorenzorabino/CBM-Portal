@@ -128,7 +128,16 @@ function populateDateIndicator(){
     const elDay = document.getElementById('date-indicator-day');
     const elWeek = document.getElementById('date-indicator-week');
     const wkPicker = document.getElementById('kpi-week-picker');
-    const now = new Date();
+    // If server provided a selected PM date, prefer it for the KPI indicator
+    const pmFromServer = (document.getElementById('kpi-date-indicator') || {}).dataset ? (document.getElementById('kpi-date-indicator').dataset.pmDate || '') : '';
+    let now = new Date();
+    if (pmFromServer) {
+        try {
+            // pmFromServer is ISO-like; use only date part
+            now = new Date(pmFromServer);
+            if (isNaN(now.getTime())) now = new Date();
+        } catch (_) { now = new Date(); }
+    }
     const [y,w] = isoWeekAndYear(now);
     // compact single-line: Weekday, Mon D • Wnn YYYY
     const weekday = now.toLocaleDateString(undefined, { weekday: 'short' });
@@ -766,6 +775,30 @@ function initKpiScopeToggle() {
             weekPickerWrap.closest('label').style.display = (scope === 'all') ? 'none' : 'inline-flex';
         }
         fetchCounts(scope).then(updateCounts).catch(() => {});
+        // Navigate so server-side board rendering aligns with selected scope
+        try {
+            const cur = new URL(window.location.href);
+            const params = new URLSearchParams(cur.search);
+            if (scope === 'all') {
+                params.set('scope', 'all');
+                params.delete('week');
+                params.delete('year');
+            } else {
+                params.set('scope', 'weekly');
+                const weekInput = document.getElementById('kpi-week-picker');
+                if (weekInput && weekInput.value) {
+                    const parts = (weekInput.value || '').split('-W');
+                    if (parts.length === 2) {
+                        params.set('year', parts[0]);
+                        params.set('week', String(parseInt(parts[1], 10)));
+                    }
+                }
+            }
+            cur.search = params.toString();
+            if (cur.toString() !== window.location.href) window.location.href = cur.toString();
+        } catch (err) {
+            // ignore navigation errors
+        }
     };
     buttons.forEach(b => b.addEventListener('click', onClick));
 

@@ -11,7 +11,7 @@ def index():
     technicians = []
     testings = []
     equipments = []
-    # Dashboard filters (week/year)
+    # Dashboard filters (week/year) and scope
     from datetime import datetime
     now = datetime.now()
     try:
@@ -28,6 +28,7 @@ def index():
         sel_year = int(year) if year else now.year
     except Exception:
         sel_year = now.year
+    scope = (request.args.get('scope') or '').strip().lower() or 'weekly'
     # KPIs and queues
     from sqlalchemy import text
     counts = {
@@ -218,42 +219,51 @@ def index():
                            FROM CBM_Testing tt WHERE tt.planner_id = p.id), '') AS worst_alarm,
                   COALESCE((SELECT COUNT(*) FROM CBM_Testing tt WHERE tt.planner_id = p.id AND TRIM(COALESCE(tt.Done_Tested_Date,''))<>''),0) AS done_date_count
                 FROM Planner p
-                WHERE p.week_number = :w AND p.year = :y
-                ORDER BY p.id DESC LIMIT 100
+                ORDER BY p.id DESC LIMIT 1000
                 """
             )
-            rows = conn.execute(board_sql, {"w": sel_week, "y": sel_year}).fetchall()
+            rows = conn.execute(board_sql).fetchall()
             for r in rows:
                 # compute pm week number from pm_date if present
                 pm_week = None
+                pm_year = None
                 try:
                     if r[5]:
                         from datetime import datetime
                         ds = str(r[5])[:10]
                         dt = datetime.fromisoformat(ds).date()
-                        pm_week = dt.isocalendar()[1]
+                        iso = dt.isocalendar()
+                        pm_week = iso[1]
+                        pm_year = iso[0]
                 except Exception:
                     pm_week = None
-                board_rows.append({
-                    "id": r[0],
-                    "week_number": r[1],
-                    "year": r[2],
-                    "department": r[3],
-                    "equipment": r[4],
-                    "pm_date": r[5],
-                    "pm_week_number": pm_week,
-                    "schedule_type": r[6],
-                    "total_tests": r[7],
-                    "completed_count": r[8],
-                    "worst_alarm": r[9],
-                    "done_date_count": r[10],
-                })
+                    pm_year = None
+                # include based on scope: weekly -> only planners whose pm_date falls in selected week/year
+                include_row = True
+                if scope == 'weekly':
+                    include_row = (pm_week == sel_week and pm_year == sel_year)
+                if include_row:
+                    board_rows.append({
+                        "id": r[0],
+                        "week_number": r[1],
+                        "year": r[2],
+                        "department": r[3],
+                        "equipment": r[4],
+                        "pm_date": r[5],
+                        "pm_week_number": pm_week,
+                        "schedule_type": r[6],
+                        "total_tests": r[7],
+                        "completed_count": r[8],
+                        "worst_alarm": r[9],
+                        "done_date_count": r[10],
+                    })
 
             # Equipment-level aggregation for the week (used to render equipment cards with progress)
             equipment_board = []
             eq_sql = text(
                 """
                 SELECT e.EquipmentID as id, e.Department as department, COALESCE(e.Machine, e.Equipment, '') as equipment,
+                  COALESCE((SELECT MIN(p2.pm_date) FROM CBM_Testing tt JOIN Planner p2 ON p2.id = tt.planner_id WHERE tt.Equipment_ID = e.EquipmentID AND p2.week_number = :w AND p2.year = :y), '') AS pm_date,
                   COALESCE((SELECT COUNT(*) FROM CBM_Testing tt JOIN Planner p2 ON p2.id = tt.planner_id WHERE tt.Equipment_ID = e.EquipmentID AND p2.week_number = :w AND p2.year = :y), 0) AS total_tests,
                   COALESCE((SELECT COUNT(*) FROM CBM_Testing tt JOIN Planner p2 ON p2.id = tt.planner_id WHERE tt.Equipment_ID = e.EquipmentID AND p2.week_number = :w AND p2.year = :y AND (COALESCE(tt.Done,0)=1 OR LOWER(TRIM(COALESCE(tt.Status,''))) IN ('completed','done'))), 0) AS completed_count
                 FROM Equipment e
@@ -265,17 +275,47 @@ def index():
                 """
             )
             try:
-                erows = conn.execute(eq_sql, {"w": sel_week, "y": sel_year}).fetchall()
+                erows = conn.execute(eq_sql).fetchall()
                 for rr in erows:
-                    equipment_board.append({
-                        "id": rr[0],
-                        "department": rr[1],
-                        "equipment": rr[2] or '',
-                        "total_tests": int(rr[3] or 0),
-                        "completed_count": int(rr[4] or 0),
-                    })
+                    # rr[3] is pm_date from subquery
+                    pm_date_val = (str(rr[3])[:10] if rr[3] else None)
+                    include = False
+                    if pm_date_val:
+                        try:
+                            from datetime import datetime
+                            dt = datetime.fromisoformat(pm_date_val).date()
+                            iso = dt.isocalendar()
+                            if iso[1] == sel_week and iso[0] == sel_year:
+                                include = True
+                        except Exception:
+                            include = False
+                    if include:
+                        equipment_board.append({
+                            "id": rr[0],
+                            "department": rr[1],
+                            "equipment": rr[2] or '',
+                            "pm_date": pm_date_val,
+                            "total_tests": int(rr[4] or 0),
+                            "completed_count": int(rr[5] or 0),
+                        })
             except Exception:
                 equipment_board = []
+            # Representative PM date for this selected week (use earliest PM date if available)
+            sel_pm_date = None
+            sel_pm_day = None
+            try:
+                pm_min = conn.execute(text("SELECT MIN(pm_date) FROM Planner WHERE week_number = :w AND year = :y AND TRIM(COALESCE(pm_date,'')) <> ''"), {"w": sel_week, "y": sel_year}).scalar()
+                if pm_min:
+                    sel_pm_date = str(pm_min)[:10]
+                    try:
+                        from datetime import datetime
+                        dt = datetime.fromisoformat(sel_pm_date)
+                        sel_pm_day = dt.strftime('%a')
+                    except Exception:
+                        sel_pm_day = None
+            except Exception:
+                sel_pm_date = None
+                sel_pm_day = None
     except Exception:
         pass
     return render_template(
@@ -293,6 +333,8 @@ def index():
         recent_attachments=recent_attachments,
         board_rows=board_rows,
     equipment_board=equipment_board,
+    sel_pm_date=sel_pm_date,
+    sel_pm_day=sel_pm_day,
         # Removed warning_longest KPI card context
     )
 
