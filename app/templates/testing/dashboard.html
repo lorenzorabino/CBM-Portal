@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width,initial-scale=1" />
+	<title>Testing • KPIs</title>
+	<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+	<script src="{{ url_for('static', filename='main.js') }}" defer></script>
+	<script src="{{ url_for('static', filename='vendor/chart.umd.min.js') }}" defer></script>
+</head>
+<body class="dashboard-page">
+	<main class="dashboard-layout">
+		<div class="sidebar"> <!-- sidebar is provided by _type_base when included --> </div>
+		<div class="main-content">
+			<section class="panel">
+				<div class="panel-title">Testing KPIs</div>
+				<div id="kpi-cards" class="dashboard-cards" data-week="{{ sel_week if sel_week else '' }}" data-year="{{ sel_year if sel_year else '' }}" data-scope="weekly">
+					<article class="kpi-card kpi-completed" style="--kpi-solid:#16a34a; --kpi-grad:#84cc16">
+						<div class="card-title">✅ Completed Tests</div>
+						<div class="card-count">{{ kpi_counts.completed or 0 }}</div>
+						<div class="kpi-subchips">
+							<div class="kpi-chip chip-planned" data-label="Planned"> <i class="kpi-dot"></i> Planned {{ kpi_counts.planned_tests or 0 }}</div>
+						</div>
+					</article>
+					<article class="kpi-card kpi-inprogress">
+						<div class="card-title">⏳ Pending Tests</div>
+						<div class="card-count">{{ kpi_counts.ongoing or 0 }}</div>
+					</article>
+					<article class="kpi-card kpi-alarms">
+						<div class="card-title">⚠️ Overdue Tests</div>
+						<div class="card-count">{{ kpi_counts.needs_done_date or 0 }}</div>
+					</article>
+					<article class="kpi-card kpi-total">
+						<div class="card-title">📈 Trend / History</div>
+						<div class="card-count">&nbsp;</div>
+					</article>
+				</div>
+			</section>
+
+			<section class="panel">
+				<div class="panel-title">Trend (12 weeks)</div>
+				<div class="chart-box"><canvas id="trend12w" class="chart-full"></canvas></div>
+			</section>
+		</div>
+	</main>
+</body>
+</html>
+

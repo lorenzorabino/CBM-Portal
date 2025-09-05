@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Weekly Equipment PM Planner</title>
+        <link rel="stylesheet" href="/static/style.css">
+    <script>
+        var departmentEquipmentMap = {{ department_equipment_map|tojson }};
+    </script>
+</head>
+<body>
+    <div id="toast-root" class="toast-container" aria-live="polite" aria-atomic="true"></div>
+    <header class="page-header">
+        <h1>Weekly Equipment PM Planner</h1>
+        <div class="action-right">
+            <a href="/planner_entries" class="btn-secondary">View All Planner Entries</a>
+        </div>
+    </header>
+
+    <main class="planner-container">
+    <form method="POST" action="/planner" class="planner-form" id="plannerForm">
+            <div class="form-group">
+                <label for="week_number">Week Number:</label>
+                <input type="number" id="week_number" name="week_number" min="1" max="52" required>
+                <label for="year">Year:</label>
+                <input type="number" id="year" name="year" required>
+            </div>
+
+            <table id="plannerTable" class="planner-table">
+                <thead>
+                    <tr>
+                        <th>Department</th>
+                        <th>Equipment</th>
+                        <th>Date</th>
+                        <th>Day</th>
+                        <th>Testing Type</th>
+                        <th>PM Date</th>
+                        <th>Schedule Type</th>
+                        <th>Proposed Target Date</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr id="templateRow" style="display:none;">
+                        <td>
+                            <select name="department_template" id="department_template" onchange="onDepartmentChange(this, 'equipment_template', 'equipment_new_template')" required disabled>
+                                <option value="">Select Department</option>
+                                {% for dept in department_list %}
+                                    <option value="{{ dept }}">{{ dept }}</option>
+                                {% endfor %}
+                                <option value="Add New">Add New</option>
+                            </select>
+                            <input type="text" name="department_new_template" id="department_new_template" placeholder="Enter new department" class="hidden-input" disabled>
+                        </td>
+                        <td>
+                            <select name="equipment_template" id="equipment_template" onchange="onEquipmentChange(this, 'equipment_new_template')" required disabled>
+                                <option value="">Select Equipment</option>
+                            </select>
+                            <input type="text" name="equipment_new_template" id="equipment_new_template" placeholder="Enter new equipment" class="hidden-input" disabled>
+                        </td>
+                        <td><input type="date" name="date_template" id="date_template" required onchange="updateDay(this)" disabled></td>
+                        <td><input type="text" name="day_template" id="day_template" placeholder="Day" readonly disabled></td>
+                        <td>
+                            <div class="testing-grid">
+                                <label><input type="checkbox" name="testing_template" value="Vibration Analysis" disabled> <span class="tag va">Vibration Analysis</span></label>
+                                <label><input type="checkbox" name="testing_template" value="Oil Analysis" disabled> <span class="tag oil">Oil Analysis</span></label>
+                                <label><input type="checkbox" name="testing_template" value="Thermal Imaging" disabled> <span class="tag thermal">Thermal Imaging</span></label>
+                                <label><input type="checkbox" name="testing_template" value="Ultrasonic Analysis" disabled> <span class="tag ultra">Ultrasonic Analysis</span></label>
+                                <label><input type="checkbox" name="testing_template" value="Motor Dynamic Analysis" disabled> <span class="tag mda">Motor Dynamic Analysis</span></label>
+                                <label><input type="checkbox" name="testing_template" value="Ultrasonic Leak Detection" disabled> <span class="tag leak">Ultrasonic Leak Detection</span></label>
+                                <label><input type="checkbox" name="testing_template" value="Dynamic Balancing" disabled> <span class="tag balance">Dynamic Balancing</span></label>
+                                <label><input type="checkbox" name="testing_template" value="Other" disabled> <span class="tag other">Other</span></label>
+                            </div>
+                        </td>
+                        <td><input type="date" name="pm_date_template" id="pm_date_template" required disabled></td>
+                        <td>
+                            <select name="schedule_type_template" id="schedule_type_template" required disabled onchange="updateScheduleColor(this)">
+                                <option value="">Select</option>
+                                <option value="Planned" selected>Planned</option>
+                                <option value="Unplanned">Unplanned</option>
+                                <option value="Validation">Validation</option>
+                            </select>
+                        </td>
+                        <td><input type="date" name="proposed_target_date_template" id="proposed_target_date_template" required disabled></td>
+                    </tr>
+
+                    <tr>
+                        <td>
+                            <select name="department_0" id="department_0" onchange="onDepartmentChange(this, 'equipment_0', 'equipment_new_0')" required>
+                                <option value="">Select Department</option>
+                                {% for dept in department_list %}
+                                    <option value="{{ dept }}">{{ dept }}</option>
+                                {% endfor %}
+                                <option value="Add New">Add New</option>
+                            </select>
+                            <input type="text" name="department_new_0" id="department_new_0" placeholder="Enter new department" class="hidden-input">
+                        </td>
+                        <td>
+                            <select name="equipment_0" id="equipment_0" onchange="onEquipmentChange(this, 'equipment_new_0')" required>
+                                <option value="">Select Equipment</option>
+                            </select>
+                            <input type="text" name="equipment_new_0" id="equipment_new_0" placeholder="Enter new equipment" class="hidden-input">
+                        </td>
+                        <td><input type="date" name="date_0" id="date_0" required onchange="updateDay(this)"></td>
+                        <td><input type="text" name="day_0" id="day_0" placeholder="Day" readonly></td>
+                        <td>
+                            <div class="testing-grid">
+                                <label><input type="checkbox" name="testing_0" value="Vibration Analysis"> <span class="tag va">Vibration Analysis</span></label>
+                                <label><input type="checkbox" name="testing_0" value="Oil Analysis"> <span class="tag oil">Oil Analysis</span></label>
+                                <label><input type="checkbox" name="testing_0" value="Thermal Imaging"> <span class="tag thermal">Thermal Imaging</span></label>
+                                <label><input type="checkbox" name="testing_0" value="Ultrasonic Analysis"> <span class="tag ultra">Ultrasonic Analysis</span></label>
+                                <label><input type="checkbox" name="testing_0" value="Motor Dynamic Analysis"> <span class="tag mda">Motor Dynamic Analysis</span></label>
+                                <label><input type="checkbox" name="testing_0" value="Ultrasonic Leak Detection"> <span class="tag leak">Ultrasonic Leak Detection</span></label>
+                                <label><input type="checkbox" name="testing_0" value="Dynamic Balancing"> <span class="tag balance">Dynamic Balancing</span></label>
+                                <label><input type="checkbox" name="testing_0" value="Other"> <span class="tag other">Other</span></label>
+                            </div>
+                        </td>
+                        <td><input type="date" name="pm_date_0" id="pm_date_0" required></td>
+                        <td>
+                            <select name="schedule_type_0" id="schedule_type_0" required onchange="updateScheduleColor(this)">
+                                <option value="">Select</option>
+                                <option value="Planned" selected>Planned</option>
+                                <option value="Unplanned">Unplanned</option>
+                                <option value="Validation">Validation</option>
+                            </select>
+                        </td>
+                        <td><input type="date" name="proposed_target_date_0" id="proposed_target_date_0" required></td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <div class="form-actions">
+                <label>
+                    <input type="checkbox" id="done_checkbox"> Done
+                </label>
+                <button type="submit" class="btn-primary">Submit</button>
+            </div>
+        </form>
+    </main>
+
+    {% if recent_planners and recent_planners|length > 0 %}
+    <section class="planner-container" style="margin-top: 20px;">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap: 12px; flex-wrap: wrap;">
+            <h3 style="margin: 0;">Planner Entries</h3>
+            <form id="filterForm" method="GET" action="/planner" style="display:flex; align-items:center; gap:8px;">
+                <label for="filter_week">Week:</label>
+                <input type="number" min="1" max="52" id="filter_week" name="filter_week" value="{{ filter_week }}" style="width: 5rem;" placeholder="1-52">
+                <label for="filter_year">Year:</label>
+                <input type="number" id="filter_year" name="filter_year" value="{{ filter_year }}" style="width: 6rem;">
+                <label for="filter_department">Department:</label>
+                <select id="filter_department" name="filter_department">
+                    <option value="">All</option>
+                    {% for dept in department_list %}
+                        <option value="{{ dept }}" {% if filter_department == dept %}selected{% endif %}>{{ dept }}</option>
+                    {% endfor %}
+                </select>
+                <button type="submit" class="btn-primary">Filter</button>
+                <a href="/planner" class="btn-secondary" style="text-decoration:none; padding:6px 10px; border:1px solid #aaa; border-radius:4px;">Reset</a>
+            </form>
+        </div>
+        <table class="planner-table">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Week</th>
+                    <th>Year</th>
+                    <th>Department</th>
+                    <th>Equipment</th>
+                    <th>Date</th>
+                    <th>Day</th>
+                    <th>PM Date</th>
+                    <th>PM Week</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in recent_planners %}
+                <tr>
+                    <td>{{ p.id }}</td>
+                    <td>{{ p.week_number }}</td>
+                    <td>{{ p.year }}</td>
+                    <td>{{ p.department }}</td>
+                    <td>{{ p.equipment }}</td>
+                    <td>{{ p.date }}</td>
+                    <td>{{ p.day }}</td>
+                    <td>{{ p.pm_date or '' }}</td>
+                    <td>{{ p.pm_week_number if p.pm_week_number is not none else '' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+    {% endif %}
+
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+            document.getElementById("year").value = new Date().getFullYear();
+            const doneCheckbox = document.getElementById("done_checkbox");
+            const submitBtn = document.querySelector("button[type='submit']");
+            // Initialize schedule color on first row
+            const sched0 = document.getElementById('schedule_type_0');
+            if (sched0) updateScheduleColor(sched0);
+            if (doneCheckbox) {
+                doneCheckbox.addEventListener("change", function() {
+                    // When marking Done, don't delete any filled rows.
+                    // Only prune empty trailing rows; when unchecked, ensure a new row appears if needed.
+                    if (doneCheckbox.checked) {
+                        pruneEmptyTrailingRows();
+                    } else {
+                        checkAndAddRow();
+                    }
+                });
+            }
+            // Auto-submit Planner Entries filters on change
+            // Filtering is manual via the Filter button
+        });
+
+        function onDepartmentChange(deptSelect, equipmentSelectId, equipmentNewId) {
+            const selectedDept = deptSelect.value;
+            const equipmentSelect = document.getElementById(equipmentSelectId);
+            const equipmentNewInput = document.getElementById(equipmentNewId);
+            const deptNewInput = document.getElementById(deptSelect.name.replace('department_', 'department_new_'));
+            if (selectedDept === "Add New") {
+                deptNewInput.style.display = "inline-block";
+                deptNewInput.disabled = false;
+                deptNewInput.required = true;
+                equipmentSelect.style.display = "none";
+                equipmentSelect.disabled = true;
+                equipmentSelect.required = false;
+                equipmentNewInput.style.display = "inline-block";
+                equipmentNewInput.disabled = false;
+                equipmentNewInput.required = true;
+            } else {
+                deptNewInput.style.display = "none";
+                deptNewInput.required = false;
+                equipmentSelect.style.display = "inline-block";
+                equipmentSelect.disabled = false;
+                equipmentSelect.required = true;
+                equipmentNewInput.style.display = "none";
+                equipmentNewInput.disabled = true;
+                equipmentNewInput.required = false;
+                equipmentSelect.innerHTML = "";
+                if (departmentEquipmentMap[selectedDept]) {
+                    departmentEquipmentMap[selectedDept].forEach(eq => {
+                        let option = document.createElement("option");
+                        option.value = eq;
+                        option.textContent = eq;
+                        equipmentSelect.appendChild(option);
+                    });
+                }
+                let addNewOption = document.createElement("option");
+                addNewOption.value = "Add New";
+                addNewOption.textContent = "Add New";
+                equipmentSelect.appendChild(addNewOption);
+            }
+        }
+
+        function onEquipmentChange(eqSelect, equipmentNewId) {
+            const equipmentNewInput = document.getElementById(equipmentNewId);
+            if (eqSelect.value === "Add New") {
+                equipmentNewInput.style.display = "inline-block";
+                equipmentNewInput.disabled = false;
+                equipmentNewInput.required = true;
+            } else {
+                equipmentNewInput.style.display = "none";
+                equipmentNewInput.required = false;
+                equipmentNewInput.disabled = true;
+            }
+        }
+
+        function updateDay(dateInput) {
+            const index = dateInput.id.split("_")[1];
+            const dayInput = document.getElementById("day_" + index);
+            dayInput.value = dateInput.value ? new Date(dateInput.value).toLocaleDateString('en-US', { weekday: 'long' }) : "";
+        }
+
+        function checkAndAddRow() {
+            const doneCheckbox = document.getElementById("done_checkbox");
+            if (doneCheckbox && doneCheckbox.checked) return;
+            const table = document.getElementById("plannerTable").getElementsByTagName("tbody")[0];
+            const lastRow = table.rows[table.rows.length - 1];
+            let allFilled = true;
+            lastRow.querySelectorAll("select[required], input[required]").forEach(input => {
+                if (!input.value) allFilled = false;
+            });
+            if (allFilled) addNewRow(table.rows.length);
+        }
+
+    function addNewRow(newIndex) {
+            const table = document.getElementById("plannerTable").getElementsByTagName("tbody")[0];
+            const template = document.getElementById("templateRow");
+            const newRow = template.cloneNode(true);
+            newRow.id = "";
+            newRow.style.display = "";
+
+            newRow.querySelectorAll("input, select").forEach(el => {
+                if (el.name) el.name = el.name.replace('_template', '_' + newIndex);
+                if (el.id) el.id = el.id.replace('_template', '_' + newIndex);
+                // Reset state but keep checkbox values intact
+                if (el.tagName === 'INPUT' && el.type === 'checkbox') {
+                    el.checked = false;
+                } else {
+                    el.value = "";
+                }
+                el.disabled = false;
+                if (el.classList.contains("hidden-input")) el.style.display = "none";
+                if (el.id.startsWith("department_")) el.setAttribute("onchange", `onDepartmentChange(this, 'equipment_${newIndex}', 'equipment_new_${newIndex}')`);
+                if (el.id.startsWith("equipment_")) el.setAttribute("onchange", `onEquipmentChange(this, 'equipment_new_${newIndex}')`);
+                if (el.id.startsWith("date_")) el.setAttribute("onchange", `updateDay(this)`);
+                if (el.id.startsWith("schedule_type_")) el.setAttribute("onchange", `updateScheduleColor(this)`);
+            });
+
+            table.appendChild(newRow);
+            // Initialize schedule color for the new row (default planned)
+            const sched = newRow.querySelector("select[id^='schedule_type_']");
+            if (sched) updateScheduleColor(sched);
+        }
+
+        document.addEventListener("input", e => {
+            const table = document.getElementById("plannerTable").getElementsByTagName("tbody")[0];
+            const lastRow = table.rows[table.rows.length - 1];
+            if (e.target.closest("tr") === lastRow) checkAndAddRow();
+        });
+
+        document.addEventListener("change", e => {
+            const table = document.getElementById("plannerTable").getElementsByTagName("tbody")[0];
+            const lastRow = table.rows[table.rows.length - 1];
+            if (e.target.closest("tr") === lastRow) checkAndAddRow();
+        });
+
+        function pruneEmptyTrailingRows() {
+            const tbody = document.getElementById('plannerTable').getElementsByTagName('tbody')[0];
+            for (let idx = tbody.rows.length - 1; idx >= 0; idx--) {
+                const row = tbody.rows[idx];
+                const requiredInputs = row.querySelectorAll('select[required], input[required]');
+                let hasAnyValue = false;
+                requiredInputs.forEach(inp => { if (inp.value) hasAnyValue = true; });
+                if (!hasAnyValue && tbody.rows.length > 1) {
+                    tbody.deleteRow(idx);
+                } else {
+                    break; // stop once we hit a row with values
+                }
+            }
+        }
+
+        function updateScheduleColor(selectEl) {
+            // Remove existing classes
+            selectEl.classList.remove('schedule-planned', 'schedule-unplanned', 'schedule-validation');
+            const val = (selectEl.value || '').toLowerCase();
+            if (val === 'planned') {
+                selectEl.classList.add('schedule-planned');
+            } else if (val === 'unplanned') {
+                selectEl.classList.add('schedule-unplanned');
+            } else if (val === 'validation') {
+                selectEl.classList.add('schedule-validation');
+            }
+        }
+
+        // Before submit, ensure Done is checked and prune trailing empty rows to not block HTML5 validation
+        document.getElementById('plannerForm').addEventListener('submit', function(e) {
+            const done = document.getElementById('done_checkbox');
+            if (!done || !done.checked) {
+                e.preventDefault();
+                alert('Please check Done before submitting.');
+                return;
+            }
+            pruneEmptyTrailingRows();
+        });
+    </script>
+        <script>
+                // Render Flask flashed messages as 1s toast notifications
+                (function() {
+                        const root = document.getElementById('toast-root');
+                        if (!root) return;
+                        const msgs = [];
+                        {% with messages = get_flashed_messages(with_categories=true) %}
+                            {% if messages %}
+                                {% for category, message in messages %}
+                                    msgs.push({ c: {{ (category or 'message')|tojson }}, m: {{ message|tojson }} });
+                                {% endfor %}
+                            {% endif %}
+                        {% endwith %}
+                        function toast(text, cat) {
+                                const div = document.createElement('div');
+                                div.className = 'toast ' + (cat ? ('toast-' + cat) : 'toast-message');
+                                div.textContent = text;
+                                root.appendChild(div);
+                                void div.offsetWidth; // reflow
+                                div.classList.add('show');
+                                setTimeout(() => { div.classList.remove('show'); setTimeout(() => div.remove(), 200); }, 3000);
+                        }
+                        msgs.forEach(x => toast(x.m, x.c));
+                })();
+        </script>
+    <script src="/static/main.js"></script>
+</body>
+</html>

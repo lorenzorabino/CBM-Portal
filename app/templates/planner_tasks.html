@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Planner #{{ planner_id }} Tasks</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/main.js" defer></script>
+</head>
+<body>
+<header class="page-header">
+  <h1>Planner #{{ planner_id }} Tasks</h1>
+  <div class="action-right">
+    <a class="btn-secondary" href="/planner_entries">Back to Planner Entries</a>
+  </div>
+</header>
+<main class="planner-container">
+  {% if planner_meta %}
+  <p>
+    <strong>Equipment:</strong> {{ planner_meta.equipment }} &nbsp;|
+    <strong>Department:</strong> {{ planner_meta.department }} &nbsp;|
+    <strong>Week/Year:</strong> {{ planner_meta.week_number }}/{{ planner_meta.year }}
+  </p>
+  {% endif %}
+
+  <table class="planner-table no-wrap">
+    <thead>
+      <tr>
+  <th>Testing Type</th>
+  <th>Status</th>
+  <th>Alarm Level</th>
+  <th>Done Tested Date</th>
+  <th>Notes</th>
+  <th>Files</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for t in tasks %}
+      <tr>
+        <td>{{ t.Test_Type }}</td>
+        <td>
+          <span class="badge">{{ t.Status }}</span>
+        </td>
+        <td>
+          {% set av = (t.Alarm_Level or '-') %}
+          {% set acls = 'alarm-normal' %}
+          {% if av == 'Critical' %}{% set acls = 'alarm-critical' %}{% elif av == 'Warning' %}{% set acls = 'alarm-warning' %}{% endif %}
+          <span class="badge {{ acls }}">{{ av }}</span>
+        </td>
+  <td>{{ (t.Done_Tested_Date or '-') }}</td>
+        <td>{{ t.Notes or '' }}</td>
+  <td style="white-space:normal; max-width:320px;">
+          {% if t.attachments and t.attachments|length > 0 %}
+            <ul style="list-style:none; padding:0; margin:0;">
+              {% for f in t.attachments %}
+                <li style="display:flex; align-items:center; gap:6px; margin:2px 0;">
+      <a href="{{ url_for('technician.view_attachment', attachment_id=f.id) }}" target="_blank" rel="noopener">{{ f.filename }}</a>
+                </li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <span style="color:#888;">No files</span>
+          {% endif %}
+        </td>
+      </tr>
+    {% else %}
+      <tr>
+  <td colspan="6" style="text-align:center; color:#666;">No linked tests for this planner.</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</main>
+</body>
+</html>
