@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Notifications</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/main.js" defer></script>
+</head>
+<body>
+  <header class="page-header">
+    <h1>Notifications</h1>
+    <div class="action-right">
+      <a href="/planner_entries" class="btn-secondary">Back to Planner Entries</a>
+    </div>
+  </header>
+
+  <main class="planner-container">
+    <div style="overflow-x:auto; margin-top:12px;">
+      <table class="planner-table no-wrap" style="width:100%; min-width:900px;">
+        <thead>
+            <tr>
+            <th>Notification</th>
+            <th>Department</th>
+            <th>Equipment</th>
+            <th>Testing Type</th>
+            <th>Alarm Level</th>
+            <th>Notes</th>
+            <th>Attachment</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for e in entries %}
+            <tr>
+              <td>#{{ e.testing_id }} (Planner {{ e.planner_id or '-' }})</td>
+              <td>{{ e.department or '' }}</td>
+              <td>{{ e.equipment or '' }}</td>
+              <td>{{ e.test_type or '' }}</td>
+              <td><span class="badge {{ 'alarm-critical' if (e.alarm_level or '')|lower == 'critical' else ('alarm-warning' if (e.alarm_level or '')|lower == 'warning' else 'toast-info') }}">{{ e.alarm_level }}</span></td>
+              <td style="max-width:320px; white-space:normal;">{{ e.notes or '-' }}</td>
+              <td>
+                {# Render one or more attachments if present #}
+                {% if e.attachments and e.attachments|length > 0 %}
+                  <div class="attachments-cell">
+                    {% for a in e.attachments %}
+                      <a href="{{ url_for('technician.view_attachment', attachment_id=a.id) }}" target="_blank">{{ a.filename }}</a>{% if not loop.last %}, {% endif %}
+                    {% endfor %}
+                  </div>
+                {% else %}
+                  -
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+          {% if entries|length == 0 %}
+            <tr><td colspan="7" style="text-align:center; color:#666;">No critical or warning entries found.</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </main>
+</body>
+</html>

@@ -191,8 +191,41 @@
     {% endif %}
 
     <script>
+        // Helper: return today's date in local YYYY-MM-DD format
+        function _localToday() {
+            const d = new Date();
+            const mm = String(d.getMonth() + 1).padStart(2, '0');
+            const dd = String(d.getDate()).padStart(2, '0');
+            return `${d.getFullYear()}-${mm}-${dd}`;
+        }
+        const _TODAY_STR = _localToday();
+
         document.addEventListener("DOMContentLoaded", () => {
             document.getElementById("year").value = new Date().getFullYear();
+            // Default only the main input Date to today's date if empty.
+            // Do NOT auto-fill PM Date or Proposed Target Date (leave them empty by default).
+            try {
+                const dateIds = ['date_0'];
+                dateIds.forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el && !el.value) el.value = _TODAY_STR;
+                });
+                // Update the day display for the first row
+                const d0 = document.getElementById('date_0');
+                if (d0) updateDay(d0);
+            } catch (_) { /* defensive */ }
+            // Prevent selecting past dates for planner date inputs by setting the
+            // HTML5 "min" attribute to today's local date (YYYY-MM-DD).
+            function _localToday() {
+                const d = new Date();
+                const mm = String(d.getMonth() + 1).padStart(2, '0');
+                const dd = String(d.getDate()).padStart(2, '0');
+                return `${d.getFullYear()}-${mm}-${dd}`;
+            }
+            const _todayStr = _localToday();
+            document.querySelectorAll('#plannerTable input[type="date"]').forEach(inp => {
+                try { inp.min = _todayStr; } catch (_) { /* ignore */ }
+            });
             const doneCheckbox = document.getElementById("done_checkbox");
             const submitBtn = document.querySelector("button[type='submit']");
             // Initialize schedule color on first row
@@ -200,10 +233,11 @@
             if (sched0) updateScheduleColor(sched0);
             if (doneCheckbox) {
                 doneCheckbox.addEventListener("change", function() {
-                    // When marking Done, don't delete any filled rows.
-                    // Only prune empty trailing rows; when unchecked, ensure a new row appears if needed.
+                    // When marking Done, remove trailing rows that don't contain meaningful data.
+                    // Force removal of rows that only have a date (default) so a blank trailing row
+                    // isn't left behind due to date being auto-filled.
                     if (doneCheckbox.checked) {
-                        pruneEmptyTrailingRows();
+                        pruneEmptyTrailingRows(true);
                     } else {
                         checkAndAddRow();
                     }
@@ -291,14 +325,26 @@
             newRow.id = "";
             newRow.style.display = "";
 
-            newRow.querySelectorAll("input, select").forEach(el => {
+                newRow.querySelectorAll("input, select").forEach(el => {
                 if (el.name) el.name = el.name.replace('_template', '_' + newIndex);
                 if (el.id) el.id = el.id.replace('_template', '_' + newIndex);
                 // Reset state but keep checkbox values intact
                 if (el.tagName === 'INPUT' && el.type === 'checkbox') {
                     el.checked = false;
                 } else {
-                    el.value = "";
+                        // For the main "date_" column default to today;
+                        // keep PM date and Proposed target date empty by default.
+                        if (el.tagName === 'INPUT' && el.type === 'date') {
+                            try {
+                                if (el.id && el.id.startsWith('date_')) {
+                                    el.value = _TODAY_STR;
+                                } else {
+                                    el.value = '';
+                                }
+                            } catch (_) { el.value = ''; }
+                        } else {
+                            el.value = "";
+                        }
                 }
                 el.disabled = false;
                 if (el.classList.contains("hidden-input")) el.style.display = "none";
@@ -309,6 +355,8 @@
             });
 
             table.appendChild(newRow);
+            // Ensure day fields for any date inputs in the new row are populated
+            newRow.querySelectorAll("input[id^='date_']").forEach(d => { try { updateDay(d); } catch(_){} });
             // Initialize schedule color for the new row (default planned)
             const sched = newRow.querySelector("select[id^='schedule_type_']");
             if (sched) updateScheduleColor(sched);
@@ -326,17 +374,22 @@
             if (e.target.closest("tr") === lastRow) checkAndAddRow();
         });
 
-        function pruneEmptyTrailingRows() {
+        function pruneEmptyTrailingRows(force=false) {
             const tbody = document.getElementById('plannerTable').getElementsByTagName('tbody')[0];
             for (let idx = tbody.rows.length - 1; idx >= 0; idx--) {
                 const row = tbody.rows[idx];
                 const requiredInputs = row.querySelectorAll('select[required], input[required]');
                 let hasAnyValue = false;
-                requiredInputs.forEach(inp => { if (inp.value) hasAnyValue = true; });
+                requiredInputs.forEach(inp => {
+                    // When forcing (Done checked), ignore date-only values to allow removing rows
+                    // that were auto-filled with today's date but otherwise empty.
+                    if (force && inp.type === 'date') return;
+                    if (inp.value) hasAnyValue = true;
+                });
                 if (!hasAnyValue && tbody.rows.length > 1) {
                     tbody.deleteRow(idx);
                 } else {
-                    break; // stop once we hit a row with values
+                    break; // stop once we hit a row with meaningful values
                 }
             }
         }

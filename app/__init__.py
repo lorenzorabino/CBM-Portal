@@ -16,7 +16,7 @@ def create_app():
     )
 
     # Database setup
-    db_path = os.path.join(base_dir, 'database', 'portal_demo.db')
+    db_path = os.path.join(base_dir, 'database', 'portal_demo3.db')
     app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     app.config['SECRET_KEY'] = 'your_secret_key_here'

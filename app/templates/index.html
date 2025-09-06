@@ -69,6 +69,12 @@
                         </span>
                         <span class="nav-label">Planner</span>
                     </a>
+                    <a href="{{ url_for('main.notification') }}" class="nav-item" title="Notifications">
+                        <span class="nav-icon" aria-hidden="true">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 17h5l-1.405-1.405A2.032 2.032 0 0 1 18 14.158V11a6 6 0 1 0-12 0v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 1 1-6 0v-1"/></svg>
+                        </span>
+                        <span class="nav-label">Notifications</span>
+                    </a>
                     <a href="#" class="nav-item" title="Settings" aria-disabled="true">
                         <span class="nav-icon" aria-hidden="true">
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 8 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 8a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 8 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09A1.65 1.65 0 0 0 15 4.6a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.36 0 .7.07 1 .2.39.16.6.59.6 1.02V11a2 2 0 1 1 0 4h-.09c-.43 0-.86.21-1.11.6z"/></svg>
@@ -112,17 +118,18 @@
             <div class="kpi-toolbar-row" style="align-items:center; justify-content: space-between; margin-top:6px; gap:12px;">
                 <div style="display:flex; gap:8px; align-items:center;">
                     <div class="segmented" role="tablist" aria-label="KPI scope">
-                        <button class="seg-item is-active" role="tab" aria-selected="true" data-scope="weekly">Weekly</button>
+                        <button class="seg-item is-active" role="tab" aria-selected="true" data-scope="weekly">This Week</button>
+                        <button class="seg-item" role="tab" aria-selected="false" data-scope="pm_week">PM Week</button>
                         <button class="seg-item" role="tab" aria-selected="false" data-scope="all">All-time</button>
                     </div>
-                    <label for="kpi-week-picker" style="font-size:.9rem; color:#64748b; display:flex; gap:8px; align-items:center;">
-                        <span style="font-size:.85rem; color:#94a3b8;">Week</span>
+                    <label for="kpi-week-picker" style="font-size:.9rem; color:#003785; display:flex; gap:8px; align-items:center;">
+                        <span style="font-size:.85rem; color:#003785;">Week</span>
                         <input id="kpi-week-picker" type="week" class="input" style="width:auto; min-width:140px;" value="{{ sel_year }}-W{{ '%02d' % sel_week }}" />
                     </label>
                 </div>
                 <div style="display:flex; align-items:center; gap:12px;">
-            <div class="kpi-scope-hint" aria-live="polite" style="font-size:.9rem; color:#64748b;">PM Date:</div>
-                    <div id="kpi-date-indicator" class="date-indicator" aria-live="polite" data-pm-date="{{ sel_pm_date or '' }}">
+            <div class="kpi-scope-hint" aria-live="polite" style="font-size:.9rem; color:#003785;">PM Date:</div>
+                    <div id="kpi-date-indicator" class="date-indicator" aria-live="polite" data-pm-date="{{ sel_pm_date or '' }}" data-pm-week="{{ pm_sel_week or '' }}" data-pm-year="{{ pm_sel_year or '' }}">
                         <div class="date-left">
                 <div id="date-indicator-date" class="date-indicator-date">{{ sel_pm_date or '—' }}</div>
                             <div id="date-indicator-day" class="date-indicator-day">{{ sel_pm_day or '—' }}</div>
@@ -130,6 +137,9 @@
                         <div class="date-right">
                             <div class="date-week-label">Week</div>
                             <div id="date-indicator-week" class="date-indicator-week">{{ sel_week and ('W%02d %d'|format(sel_week, sel_year)) or 'W--' }}</div>
+                        </div>
+                        <!-- PM week indicator (server-provided) -->
+                        <div id="pm-week-indicator" style="font-size:.85rem; color:#4b5563; margin-top:4px;">
                         </div>
                     </div>
                 </div>
@@ -185,7 +195,8 @@
             <section class="panel">
                 <div class="panel-title">This Week's Board</div>
                 <div style="margin-top:8px;">
-                    <div class="equipment-grid" aria-live="polite">
+                                        <div id="equipment-board-wrap">
+                                            <div class="equipment-grid" aria-live="polite">
                         {% if equipment_board and equipment_board|length > 0 %}
                             {% for e in equipment_board %}
                                 {% set pct = ((e.completed_count or 0) * 100 // (e.total_tests or 1)) %}
@@ -208,7 +219,8 @@
                         {% else %}
                             <div style="color:#666; padding:12px;">No equipment scheduled this week.</div>
                         {% endif %}
-                    </div>
+                                            </div>
+                                        </div>
                     <!-- Keep original table for compatibility/fallback -->
                     <div style="overflow:auto; margin-top:12px;">
                         <table class="planner-table no-wrap" style="min-width:980px;">

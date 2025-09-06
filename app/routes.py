@@ -29,6 +29,31 @@ def index():
     except Exception:
         sel_year = now.year
     scope = (request.args.get('scope') or '').strip().lower() or 'weekly'
+    # Determine PM-week target: when scope is pm_week we want to show the "next" ISO week
+    # (e.g. if current/selected week is 36, PM Week should show 37). Allow explicit pm_week/pm_year params.
+    pm_week_param = (request.args.get('pm_week') or '').strip()
+    pm_year_param = (request.args.get('pm_year') or '').strip()
+    pm_sel_week = None
+    pm_sel_year = None
+    try:
+        if pm_week_param:
+            pm_sel_week = int(pm_week_param)
+            pm_sel_year = int(pm_year_param) if pm_year_param else sel_year
+        else:
+            # compute next ISO week after selected week/year
+            from datetime import date, timedelta
+            try:
+                base = date.fromisocalendar(sel_year, sel_week, 1)
+                nxt = base + timedelta(weeks=1)
+                iso = nxt.isocalendar()
+                pm_sel_year = iso[0]
+                pm_sel_week = iso[1]
+            except Exception:
+                pm_sel_week = sel_week + 1
+                pm_sel_year = sel_year
+    except Exception:
+        pm_sel_week = sel_week + 1
+        pm_sel_year = sel_year
     # KPIs and queues
     from sqlalchemy import text
     counts = {
@@ -238,10 +263,14 @@ def index():
                 except Exception:
                     pm_week = None
                     pm_year = None
-                # include based on scope: weekly -> only planners whose pm_date falls in selected week/year
+                # include based on scope:
+                # - weekly: planners whose pm_date ISO week == selected week/year (sel_week/sel_year)
+                # - pm_week: planners whose pm_date ISO week == pm_sel_week/pm_sel_year (the next week)
                 include_row = True
                 if scope == 'weekly':
                     include_row = (pm_week == sel_week and pm_year == sel_year)
+                elif scope == 'pm_week':
+                    include_row = (pm_week == pm_sel_week and pm_year == pm_sel_year)
                 if include_row:
                     board_rows.append({
                         "id": r[0],
@@ -335,8 +364,55 @@ def index():
     equipment_board=equipment_board,
     sel_pm_date=sel_pm_date,
     sel_pm_day=sel_pm_day,
+    pm_sel_week=pm_sel_week,
+    pm_sel_year=pm_sel_year,
         # Removed warning_longest KPI card context
     )
+
+
+@main.route('/notification', methods=['GET'])
+def notification():
+    """Show all testing entries with Alarm_Level 'warning' or 'critical'"""
+    from app.models import db
+    from sqlalchemy import text
+    from flask import url_for
+    entries = []
+    try:
+        with db.engine.begin() as conn:
+            rows = conn.execute(text("""
+          SELECT t.Testing_ID as testing_id, t.Test_Type as test_type, t.Alarm_Level as alarm_level,
+              t.Notes as notes, t.planner_id as planner_id, p.department, p.equipment, p.pm_date
+                FROM CBM_Testing t
+                LEFT JOIN planner p ON p.id = t.planner_id
+                WHERE LOWER(TRIM(COALESCE(t.Alarm_Level,''))) IN ('critical','warning')
+                ORDER BY CASE LOWER(TRIM(t.Alarm_Level)) WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END, p.department, p.equipment
+            """)).mappings().all()
+            for r in rows:
+                entries.append(dict(r))
+
+            # Fetch attachments for the visible testing rows in one query
+            if entries:
+                ids = [e['testing_id'] for e in entries if e.get('testing_id') is not None]
+                if ids:
+                    in_binds = {f"a{i}": ids[i] for i in range(len(ids))}
+                    inlist = ", ".join(":" + k for k in in_binds.keys())
+                    att_sql = text(
+                        f"SELECT testing_id, id, filename FROM CBM_Testing_Attachments WHERE testing_id IN ({inlist}) ORDER BY id DESC"
+                    )
+                    atts = conn.execute(att_sql, in_binds).fetchall()
+                    by_test = {}
+                    for testing_id, att_id, filename in atts:
+                        by_test.setdefault(testing_id, []).append({
+                            'id': att_id,
+                            'filename': filename,
+                        })
+                    for e in entries:
+                        e['attachments'] = by_test.get(e.get('testing_id'), [])
+                        # Build view URLs for template convenience
+                        e['attachment_links'] = [url_for('technician.view_attachment', attachment_id=a['id']) for a in e['attachments']]
+    except Exception as e:
+        print('Error fetching notifications:', e)
+    return render_template('notification.html', entries=entries)
 
 
 @main.route('/api/dashboard/weekly_metrics')
