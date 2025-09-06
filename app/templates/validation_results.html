@@ -309,6 +309,36 @@
         } else { initAll(); }
       })();
     </script>
+      <script>
+        // Disable interactive controls on validation page unless a Post-it has been posted from Notifications
+        (function(){
+          function isPostedForPlanner(plannerId){ try { return !!localStorage.getItem('notif_posted_planner_' + plannerId); } catch(e){ return false; } }
+          function isPostedForTesting(testingId){ try { return !!localStorage.getItem('notif_posted_testing_' + testingId); } catch(e){ return false; } }
+          function disableRowControls(){
+            document.querySelectorAll('.double-scroll-content table tbody tr').forEach(function(tr){
+              // try to find planner id link or data attribute in the first cell
+              const link = tr.querySelector('a[href*="planner_tasks"]');
+              let plannerId = null;
+              if(link && link.textContent) plannerId = link.textContent.trim();
+              // also try data attribute on Open button (if present)
+              const openBtn = tr.querySelector('.validation-open');
+              if(openBtn && openBtn.dataset && openBtn.dataset.plannerId) plannerId = openBtn.dataset.plannerId;
+              // try testing id from first link if no planner
+              const testingId = tr.querySelector('a[href*="planner_tasks"]') ? null : null;
+              const allow = plannerId ? isPostedForPlanner(plannerId) : false;
+              if(!allow){
+                // disable links and buttons in this row
+                tr.querySelectorAll('a, button, input, select, textarea').forEach(function(el){
+                  el.setAttribute('aria-disabled','true');
+                  el.style.pointerEvents = 'none';
+                  el.style.opacity = '0.6';
+                });
+              }
+            });
+          }
+          if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', disableRowControls); else disableRowControls();
+        })();
+      </script>
 
     <section class="panel" style="margin-top:12px;">
         <div class="panel-title">Validation <span class="badge" style="margin-left:8px;">{{ validation_count }}</span></div>
@@ -375,7 +405,7 @@
                     <td>{{ (r.Done_Tested_Date or '')[:10] }}</td>
                     <td>
                       {% if r.planner_id %}
-                        <a class="btn-secondary" href="{{ url_for('main.planner_tasks', planner_id=r.planner_id) }}">Open</a>
+                        <a class="btn-secondary validation-open" data-planner-id="{{ r.planner_id }}" href="{{ url_for('main.planner_tasks', planner_id=r.planner_id) }}">Open</a>
                       {% else %}
                         <span class="btn-secondary" style="opacity:.6; pointer-events:none;">Open</span>
                       {% endif %}

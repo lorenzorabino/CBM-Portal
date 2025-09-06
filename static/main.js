@@ -518,7 +518,10 @@ function renderWarnCorrectedStack() {
     if (!el || typeof Chart === 'undefined') return;
     const basisSel = document.getElementById('basisToggle');
     const basis = (basisSel && basisSel.value) || 'planner';
-    fetch('/api/dashboard/weekly_metrics?weeks=12&basis=' + encodeURIComponent(basis))
+    // If we're on the validation_results page, use the Validations-specific metrics endpoint
+    const useValidations = window.location.pathname && window.location.pathname.toLowerCase().indexOf('/validation_results') !== -1;
+    const apiUrl = useValidations ? '/api/validations/weekly_metrics' : '/api/dashboard/weekly_metrics';
+    fetch(apiUrl + '?weeks=12&basis=' + encodeURIComponent(basis))
         .then(r => r.json())
         .then(d => {
             const ctx = el.getContext('2d');

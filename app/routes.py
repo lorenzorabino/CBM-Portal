@@ -379,38 +379,74 @@ def notification():
     entries = []
     try:
         with db.engine.begin() as conn:
-            rows = conn.execute(text("""
-          SELECT t.Testing_ID as testing_id, t.Test_Type as test_type, t.Alarm_Level as alarm_level,
-              t.Notes as notes, t.Done_Tested_Date as done_tested_date, t.planner_id as planner_id,
-              p.department, p.equipment, p.pm_date, p.schedule_type
-                FROM CBM_Testing t
-                LEFT JOIN planner p ON p.id = t.planner_id
-                WHERE LOWER(TRIM(COALESCE(t.Alarm_Level,''))) IN ('critical','warning')
-                ORDER BY CASE LOWER(TRIM(t.Alarm_Level)) WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END, p.department, p.equipment
-            """)).mappings().all()
+            # Prefer Notification table; select columns exactly as requested
+            sel = text(
+                "SELECT Notification, Department, Equipment, Testing_Type, PM_Date, Scheduled_Type, Done_Tested_Date, Alarm_Level, Notes, Attachment FROM Notification ORDER BY rowid DESC LIMIT :lim"
+            )
+            rows = conn.execute(sel, { 'lim': 1000 }).mappings().fetchall()
             for r in rows:
-                entries.append(dict(r))
+                # Map DB columns to template fields
+                notification_text = r.get('Notification')
+                department = r.get('Department')
+                equipment = r.get('Equipment')
+                test_type = r.get('Testing_Type')
+                pm_date = r.get('PM_Date')
+                schedule_type = r.get('Scheduled_Type')
+                done_tested_date = r.get('Done_Tested_Date')
+                alarm_level = r.get('Alarm_Level')
+                notes = r.get('Notes')
+                attachment_val = r.get('Attachment')
 
-            # Fetch attachments for the visible testing rows in one query
-            if entries:
-                ids = [e['testing_id'] for e in entries if e.get('testing_id') is not None]
-                if ids:
-                    in_binds = {f"a{i}": ids[i] for i in range(len(ids))}
-                    inlist = ", ".join(":" + k for k in in_binds.keys())
-                    att_sql = text(
-                        f"SELECT testing_id, id, filename FROM CBM_Testing_Attachments WHERE testing_id IN ({inlist}) ORDER BY id DESC"
-                    )
-                    atts = conn.execute(att_sql, in_binds).fetchall()
-                    by_test = {}
-                    for testing_id, att_id, filename in atts:
-                        by_test.setdefault(testing_id, []).append({
-                            'id': att_id,
-                            'filename': filename,
-                        })
-                    for e in entries:
-                        e['attachments'] = by_test.get(e.get('testing_id'), [])
-                        # Build view URLs for template convenience
-                        e['attachment_links'] = [url_for('technician.view_attachment', attachment_id=a['id']) for a in e['attachments']]
+                entry = dict(
+                    testing_id=None,
+                    planner_id=None,
+                    notification=notification_text,
+                    department=department,
+                    equipment=equipment,
+                    test_type=test_type,
+                    pm_date=pm_date,
+                    schedule_type=schedule_type,
+                    done_tested_date=done_tested_date,
+                    alarm_level=alarm_level,
+                    notes=notes,
+                    attachments=[],
+                )
+
+                # Try to resolve Attachment: if numeric, look up Testing_Attachments by id; if comma-separated names, show them
+                try:
+                    if attachment_val is not None:
+                        sval = str(attachment_val).strip()
+                        if sval.isdigit():
+                            # treat as attachment id
+                            arow = conn.execute(text("SELECT id, testing_id, filename FROM CBM_Testing_Attachments WHERE id = :id LIMIT 1"), {"id": int(sval)}).fetchone()
+                            if arow:
+                                entry['attachments'].append({'id': arow[0], 'filename': arow[2]})
+                        elif ',' in sval:
+                            # multiple filenames
+                            parts = [p.strip() for p in sval.split(',') if p.strip()]
+                            for p in parts:
+                                entry['attachments'].append({'id': None, 'filename': p})
+                        elif sval:
+                            # single filename or text
+                            entry['attachments'].append({'id': None, 'filename': sval})
+                except Exception:
+                    # ignore attachment resolution errors
+                    pass
+
+                # For convenience keep a short 'notification' field used by template display in first column
+                # Also provide attachment_links when id present
+                if entry['attachments']:
+                    links = []
+                    for a in entry['attachments']:
+                        try:
+                            links.append(url_for('technician.view_attachment', attachment_id=a.get('id')))
+                        except Exception:
+                            links.append(None)
+                    entry['attachment_links'] = links
+                else:
+                    entry['attachment_links'] = []
+
+                entries.append(entry)
     except Exception as e:
         print('Error fetching notifications:', e)
     return render_template('notification.html', entries=entries, page_title='Notifications')
@@ -587,6 +623,112 @@ def api_weekly_metrics():
         pass
     # expose as a separate field; UI will use this for the line series
     resp['corrected_by_done'] = corrected_by_done
+    return jsonify(resp)
+
+
+@main.route('/api/validations/weekly_metrics')
+def api_validations_weekly_metrics():
+    """Return weekly alarm totals and corrections for Validations table.
+
+    Response format mirrors /api/dashboard/weekly_metrics for compatibility with the chart:
+    {
+      labels: [...],
+      alarms: { critical: [...], warning: [...] },
+      warnings_closed: [...],
+      criticals_closed: [...],
+      corrected_by_done: [...]
+    }
+    """
+    from datetime import date, timedelta, datetime
+    try:
+        n = int((request.args.get('weeks') or '12').strip())
+        if n < 1: n = 12
+        if n > 52: n = 52
+    except Exception:
+        n = 12
+    basis = (request.args.get('basis') or 'planner').strip().lower()
+    today = date.today()
+    pairs = []
+    for k in range(n - 1, -1, -1):
+        d = today - timedelta(weeks=k)
+        iso = d.isocalendar()
+        pairs.append((iso[0], iso[1]))
+    # unique ascending
+    uniq = []
+    seen = set()
+    for y, w in pairs:
+        key = (y, w)
+        if key not in seen:
+            seen.add(key)
+            uniq.append(key)
+
+    labels = [f"{y}-W{w:02d}" for (y, w) in pairs]
+    pair_index = { (y, w): i for i, (y, w) in enumerate(pairs) }
+
+    # init series
+    alarms_crit = [0] * len(labels)
+    alarms_warn = [0] * len(labels)
+    warnings_closed = [0] * len(labels)
+    criticals_closed = [0] * len(labels)
+    corrected_by_done = [0] * len(labels)
+
+    try:
+        with db.engine.begin() as conn:
+            # Count alarms per planner week/year (using Validations.Week/Year)
+            for idx, (yy, ww) in enumerate(pairs):
+                try:
+                    rcrit = conn.execute(text("SELECT COUNT(*) FROM Validations v WHERE v.Week = :w AND v.Year = :y AND LOWER(TRIM(COALESCE(v.Alarm,''))) = 'critical'"), {"w": ww, "y": yy}).scalar() or 0
+                    rwarn = conn.execute(text("SELECT COUNT(*) FROM Validations v WHERE v.Week = :w AND v.Year = :y AND LOWER(TRIM(COALESCE(v.Alarm,''))) = 'warning'"), {"w": ww, "y": yy}).scalar() or 0
+                except Exception:
+                    rcrit = 0; rwarn = 0
+                alarms_crit[idx] = int(rcrit)
+                alarms_warn[idx] = int(rwarn)
+
+            # Closed counts by planner week: count rows where Status indicates done OR Done_Date present
+            for idx, (yy, ww) in enumerate(pairs):
+                try:
+                    wc = conn.execute(text(
+                        "SELECT COUNT(*) FROM Validations v WHERE v.Week = :w AND v.Year = :y AND LOWER(TRIM(COALESCE(v.Alarm,''))) = 'warning' AND (LOWER(TRIM(COALESCE(v.Status,''))) IN ('done','completed') OR TRIM(COALESCE(v.Done_Date,'')) <> '')"
+                    ), {"w": ww, "y": yy}).scalar() or 0
+                except Exception:
+                    wc = 0
+                warnings_closed[idx] = int(wc)
+                try:
+                    cc = conn.execute(text(
+                        "SELECT COUNT(*) FROM Validations v WHERE v.Week = :w AND v.Year = :y AND LOWER(TRIM(COALESCE(v.Alarm,''))) = 'critical' AND (LOWER(TRIM(COALESCE(v.Status,''))) IN ('done','completed') OR TRIM(COALESCE(v.Done_Date,'')) <> '')"
+                    ), {"w": ww, "y": yy}).scalar() or 0
+                except Exception:
+                    cc = 0
+                criticals_closed[idx] = int(cc)
+
+            # Corrections grouped by Done_Date week (done-week)
+            rows = conn.execute(text(
+                "SELECT TRIM(COALESCE(v.Done_Date,'')) AS dtd, LOWER(TRIM(COALESCE(v.Alarm,''))) AS alarm FROM Validations v WHERE TRIM(COALESCE(v.Done_Date,'')) <> ''"
+            )).fetchall()
+            for dtd, alarm in rows:
+                try:
+                    ds = str(dtd)[:10]
+                    dt = datetime.fromisoformat(ds).date()
+                    iso = dt.isocalendar()
+                    key = (int(iso[0]), int(iso[1]))
+                    idx = pair_index.get(key)
+                    if idx is None:
+                        continue
+                    if alarm in ('warning','critical'):
+                        corrected_by_done[idx] += 1
+                except Exception:
+                    continue
+    except Exception:
+        # on any error return zeros/labels
+        pass
+
+    resp = dict(
+        labels=labels,
+        alarms={ 'critical': alarms_crit, 'warning': alarms_warn },
+        warnings_closed=warnings_closed,
+        criticals_closed=criticals_closed,
+        corrected_by_done=corrected_by_done,
+    )
     return jsonify(resp)
 
 
@@ -1164,77 +1306,112 @@ def validation_results_alias():
     filters = dict(week=week, year=year, department=department, equipment=equipment, alarm=alarm, status=status, limit=max_rows, test_type=test_type_filter)
     try:
         with db.engine.begin() as conn:
-            # Build query
-            select_sql = (
-                "SELECT t.Testing_ID, t.Test_Type, "
-                "COALESCE(NULLIF(TRIM(t.Status), ''), CASE WHEN COALESCE(t.Done,0)=1 THEN 'done' END, '') AS Status, "
-                "TRIM(COALESCE(t.Alarm_Level, '')) AS Alarm_Level, "
-                "t.Notes, t.Result, t.Done_Tested_Date, t.planner_id, "
-                "p.department, p.equipment, p.week_number, p.year, p.pm_date, p.schedule_type, p.proposed_target_date "
-                "FROM CBM_Testing t LEFT JOIN Planner p ON p.id = t.planner_id"
-            )
-            clauses = []
-            params = {}
-            if week:
-                clauses.append("p.week_number = :w")
-                params['w'] = week
-            if year:
-                clauses.append("p.year = :y")
-                params['y'] = year
-            if department:
-                clauses.append("p.department = :d")
-                params['d'] = department
-            if equipment:
-                clauses.append("p.equipment = :e")
-                params['e'] = equipment
-            if alarm:
-                clauses.append("LOWER(TRIM(COALESCE(t.Alarm_Level,''))) = :a")
-                params['a'] = alarm.lower()
-            if test_type_filter:
-                clauses.append("TRIM(COALESCE(t.Test_Type,'')) = :tt")
-                params['tt'] = test_type_filter
-            if status:
-                s = status.lower()
-                if s in ('completed','done'):
-                    clauses.append("(LOWER(TRIM(COALESCE(t.Status,''))) IN ('completed','done') OR COALESCE(t.Done,0)=1)")
-                elif s in ('ongoing','todo'):
-                    clauses.append("(LOWER(TRIM(COALESCE(t.Status,''))) IN ('ongoing','todo',''))")
-                else:
-                    clauses.append("LOWER(TRIM(COALESCE(t.Status,''))) = :s")
-                    params['s'] = status
-            if clauses:
-                select_sql += " WHERE " + " AND ".join(clauses)
-            select_sql += " ORDER BY t.Testing_ID DESC LIMIT :lim"
-            params['lim'] = max_rows
-
-            rows = conn.execute(text(select_sql), params).mappings().fetchall()
-            for r in rows:
-                lvl = (r.get('Alarm_Level') or '').strip().capitalize()
-                if lvl not in ('Critical','Warning','Normal'):
-                    lvl_key = 'Unknown'
-                else:
-                    # Normalize exact case
-                    lvl_key = 'Critical' if lvl.lower()=='critical' else ('Warning' if lvl.lower()=='warning' else 'Normal')
-                item = dict(
-                    Testing_ID=r.get('Testing_ID'),
-                    Test_Type=r.get('Test_Type'),
-                    Status=(r.get('Status') or 'todo'),
-                    Alarm_Level=(r.get('Alarm_Level') or ''),
-                    Notes=r.get('Notes'),
-                    Result=r.get('Result'),
-                    Done_Tested_Date=r.get('Done_Tested_Date'),
-                    planner_id=r.get('planner_id'),
-                    department=r.get('department'),
-                    equipment=r.get('equipment'),
-                    week_number=r.get('week_number'),
-                    year=r.get('year'),
-                    pm_date=r.get('pm_date'),
-                    schedule_type=r.get('schedule_type'),
-                    proposed_target_date=r.get('proposed_target_date'),
+            # If a dedicated 'Validations' table exists in the SQLite DB, prefer it.
+            has_validations = conn.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name='Validations' LIMIT 1")).fetchone()
+            if has_validations:
+                sel = text(
+                    "SELECT ID, Notification, Week, Year, Department, Equipment, Type, Schedule, Status, Alarm, Done_Date FROM Validations ORDER BY ID DESC LIMIT :lim"
                 )
-                groups[lvl_key].append(item)
-                summary[lvl_key] += 1
-                summary['Total'] += 1
+                rows = conn.execute(sel, { 'lim': max_rows }).mappings().fetchall()
+                for r in rows:
+                    alarm_val = (r.get('Alarm') or '').strip()
+                    lvl = alarm_val.capitalize() if alarm_val else 'Unknown'
+                    if lvl not in ('Critical','Warning','Normal'):
+                        lvl_key = 'Unknown'
+                    else:
+                        lvl_key = 'Critical' if lvl.lower()=='critical' else ('Warning' if lvl.lower()=='warning' else 'Normal')
+                    item = dict(
+                        Testing_ID=None,
+                        Test_Type=r.get('Type'),
+                        Status=(r.get('Status') or ''),
+                        Alarm_Level=(r.get('Alarm') or ''),
+                        Notes=r.get('Notification'),
+                        Result=None,
+                        Done_Tested_Date=r.get('Done_Date') or '',
+                        planner_id=r.get('ID'),
+                        department=r.get('Department'),
+                        equipment=r.get('Equipment'),
+                        week_number=r.get('Week'),
+                        year=r.get('Year'),
+                        pm_date=None,
+                        schedule_type=r.get('Schedule'),
+                        proposed_target_date=None,
+                    )
+                    groups[lvl_key].append(item)
+                    summary[lvl_key] += 1
+                    summary['Total'] += 1
+            else:
+                # Fallback: existing CBM_Testing + Planner based selection
+                select_sql = (
+                    "SELECT t.Testing_ID, t.Test_Type, "
+                    "COALESCE(NULLIF(TRIM(t.Status), ''), CASE WHEN COALESCE(t.Done,0)=1 THEN 'done' END, '') AS Status, "
+                    "TRIM(COALESCE(t.Alarm_Level, '')) AS Alarm_Level, "
+                    "t.Notes, t.Result, t.Done_Tested_Date, t.planner_id, "
+                    "p.department, p.equipment, p.week_number, p.year, p.pm_date, p.schedule_type, p.proposed_target_date "
+                    "FROM CBM_Testing t LEFT JOIN Planner p ON p.id = t.planner_id"
+                )
+                clauses = []
+                params = {}
+                if week:
+                    clauses.append("p.week_number = :w")
+                    params['w'] = week
+                if year:
+                    clauses.append("p.year = :y")
+                    params['y'] = year
+                if department:
+                    clauses.append("p.department = :d")
+                    params['d'] = department
+                if equipment:
+                    clauses.append("p.equipment = :e")
+                    params['e'] = equipment
+                if alarm:
+                    clauses.append("LOWER(TRIM(COALESCE(t.Alarm_Level,''))) = :a")
+                    params['a'] = alarm.lower()
+                if test_type_filter:
+                    clauses.append("TRIM(COALESCE(t.Test_Type,'')) = :tt")
+                    params['tt'] = test_type_filter
+                if status:
+                    s = status.lower()
+                    if s in ('completed','done'):
+                        clauses.append("(LOWER(TRIM(COALESCE(t.Status,''))) IN ('completed','done') OR COALESCE(t.Done,0)=1)")
+                    elif s in ('ongoing','todo'):
+                        clauses.append("(LOWER(TRIM(COALESCE(t.Status,''))) IN ('ongoing','todo',''))")
+                    else:
+                        clauses.append("LOWER(TRIM(COALESCE(t.Status,''))) = :s")
+                        params['s'] = status
+                if clauses:
+                    select_sql += " WHERE " + " AND ".join(clauses)
+                select_sql += " ORDER BY t.Testing_ID DESC LIMIT :lim"
+                params['lim'] = max_rows
+
+                rows = conn.execute(text(select_sql), params).mappings().fetchall()
+                for r in rows:
+                    lvl = (r.get('Alarm_Level') or '').strip().capitalize()
+                    if lvl not in ('Critical','Warning','Normal'):
+                        lvl_key = 'Unknown'
+                    else:
+                        # Normalize exact case
+                        lvl_key = 'Critical' if lvl.lower()=='critical' else ('Warning' if lvl.lower()=='warning' else 'Normal')
+                    item = dict(
+                        Testing_ID=r.get('Testing_ID'),
+                        Test_Type=r.get('Test_Type'),
+                        Status=(r.get('Status') or 'todo'),
+                        Alarm_Level=(r.get('Alarm_Level') or ''),
+                        Notes=r.get('Notes'),
+                        Result=r.get('Result'),
+                        Done_Tested_Date=r.get('Done_Tested_Date'),
+                        planner_id=r.get('planner_id'),
+                        department=r.get('department'),
+                        equipment=r.get('equipment'),
+                        week_number=r.get('week_number'),
+                        year=r.get('year'),
+                        pm_date=r.get('pm_date'),
+                        schedule_type=r.get('schedule_type'),
+                        proposed_target_date=r.get('proposed_target_date'),
+                    )
+                    groups[lvl_key].append(item)
+                    summary[lvl_key] += 1
+                    summary['Total'] += 1
     except Exception:
         pass
 
