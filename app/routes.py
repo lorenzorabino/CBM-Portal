@@ -381,7 +381,8 @@ def notification():
         with db.engine.begin() as conn:
             rows = conn.execute(text("""
           SELECT t.Testing_ID as testing_id, t.Test_Type as test_type, t.Alarm_Level as alarm_level,
-              t.Notes as notes, t.planner_id as planner_id, p.department, p.equipment, p.pm_date
+              t.Notes as notes, t.Done_Tested_Date as done_tested_date, t.planner_id as planner_id,
+              p.department, p.equipment, p.pm_date, p.schedule_type
                 FROM CBM_Testing t
                 LEFT JOIN planner p ON p.id = t.planner_id
                 WHERE LOWER(TRIM(COALESCE(t.Alarm_Level,''))) IN ('critical','warning')
@@ -412,7 +413,7 @@ def notification():
                         e['attachment_links'] = [url_for('technician.view_attachment', attachment_id=a['id']) for a in e['attachments']]
     except Exception as e:
         print('Error fetching notifications:', e)
-    return render_template('notification.html', entries=entries)
+    return render_template('notification.html', entries=entries, page_title='Notifications')
 
 
 @main.route('/api/dashboard/weekly_metrics')

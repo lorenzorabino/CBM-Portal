@@ -1,3 +1,102 @@
+{% extends 'technician/_type_base.html' %}
+{% block content %}
+  <div style="margin-bottom:10px; display:flex; align-items:center; justify-content:space-between; gap:12px;">
+    <h2 style="margin:0;">Notifications</h2>
+  </div>
+  <div style="overflow-x:auto; margin-top:6px;">
+    <table class="table" style="white-space:nowrap; min-width:1000px;">
+      <thead>
+        <tr>
+          <th>Notification</th>
+          <th>Department</th>
+          <th>Equipment</th>
+          <th>Testing Type</th>
+          <th>PM Date</th>
+          <th>Scheduled type</th>
+          <th>Done Tested Date</th>
+          <th>Alarm Level</th>
+          <th>Notes</th>
+          <th>Attachment</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in entries %}
+          <tr>
+            <td style="white-space:normal; max-width:320px;">
+              {% set tid = e.testing_id %}
+              {% if tid %}
+                <div class="notification-edit" contenteditable="true" data-testing-id="{{ tid }}">#{{ tid }} (Planner {{ e.planner_id or '-' }})</div>
+                <button class="btn post-it" type="button" data-testing-id="{{ tid }}" aria-label="Post it">Post it!</button>
+                <span class="saved-indicator" aria-hidden="true"></span>
+              {% else %}
+                #{{ e.testing_id or '-' }} (Planner {{ e.planner_id or '-' }})
+              {% endif %}
+            </td>
+            <td>{{ e.department or '' }}</td>
+            <td>{{ e.equipment or '' }}</td>
+            <td>{{ e.test_type or '' }}</td>
+            <td class="text-center">{{ e.pm_date or '-' }}</td>
+            <td class="text-center">{{ e.schedule_type or '-' }}</td>
+            <td class="text-center">{{ e.done_tested_date or '-' }}</td>
+            <td class="text-center"><span class="badge {{ 'alarm-critical' if (e.alarm_level or '')|lower == 'critical' else ('alarm-warning' if (e.alarm_level or '')|lower == 'warning' else 'toast-info') }}" style="font-size: 1.2em;">{{ e.alarm_level }}</span></td>
+            <td class="notes-cell" style="max-width:320px; white-space:normal;">{{ e.notes or '-' }}</td>
+            <td style="white-space:normal; max-width:320px;">
+              {% if e.attachments and e.attachments|length > 0 %}
+                <ul style="list-style:none; padding:0; margin:0;">
+                  {% for a in e.attachments %}
+                    <li style="display:inline-block; margin-right:8px;"><a href="{{ url_for('technician.view_attachment', attachment_id=a.id) }}" target="_blank">{{ a.filename }}</a></li>
+                  {% endfor %}
+                </ul>
+              {% else %}
+                -
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        {% if entries|length == 0 %}
+          <tr><td colspan="10" style="text-align:center; color:#666;">No critical or warning entries found.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+
+  <style>
+    .notification-edit { padding:6px 8px; border-radius:4px; border:1px dashed transparent; min-width:220px; display:inline-block; }
+    .notification-edit:focus { outline:none; border-color:#bbb; background:#fffef8; }
+    .saved-indicator { margin-left:6px; color:green; font-size:12px; display:none; }
+    .saved-indicator.visible { display:inline; }
+  .post-it { margin-left:8px; padding:4px 8px; font-size:0.95em; }
+  /* Notes cell: allow wrapping and breaking long words */
+  td.notes-cell { white-space:normal !important; overflow-wrap:break-word; word-wrap:break-word; word-break:break-word; max-width:320px; }
+  </style>
+  <script>
+    (function(){
+      const prefix = 'notif_local_';
+      function keyFor(id){ return prefix + id; }
+      function markSaved(el){ const s = el.nextElementSibling; if(s){ s.classList.add('visible'); s.textContent='Saved'; setTimeout(()=>{ s.classList.remove('visible'); s.textContent=''; }, 1200); } }
+      function loadAll(){ document.querySelectorAll('.notification-edit').forEach(el=>{
+        const id = el.dataset.testingId; const v = localStorage.getItem(keyFor(id)); if(v!==null){ el.textContent = v; }
+      }); }
+      function save(el){ const id = el.dataset.testingId; if(!id) return; const v = el.textContent.trim(); if(v.length===0) { localStorage.removeItem(keyFor(id)); } else { localStorage.setItem(keyFor(id), v); } markSaved(el); }
+      document.addEventListener('DOMContentLoaded', ()=>{
+        loadAll();
+        document.body.addEventListener('keydown', (ev)=>{
+          if(ev.key === 'Enter' && ev.target && ev.target.classList && ev.target.classList.contains('notification-edit')){
+            ev.preventDefault(); ev.target.blur();
+          }
+        });
+        document.body.addEventListener('blur', (ev)=>{ if(ev.target && ev.target.classList && ev.target.classList.contains('notification-edit')){ save(ev.target); } }, true);
+        document.body.addEventListener('click', (ev)=>{
+          if(ev.target && ev.target.classList && ev.target.classList.contains('post-it')){
+            const id = ev.target.dataset.testingId;
+            const el = document.querySelector('.notification-edit[data-testing-id="' + id + '"]');
+            if(el) save(el);
+          }
+        });
+      });
+    })();
+  </script>
+{% endblock %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -23,6 +122,9 @@
             <th>Department</th>
             <th>Equipment</th>
             <th>Testing Type</th>
+            <th>PM Date</th>
+            <th>Scheduled type</th>
+            <th>Done Tested Date</th>
             <th>Alarm Level</th>
             <th>Notes</th>
             <th>Attachment</th>
@@ -31,12 +133,24 @@
         <tbody>
           {% for e in entries %}
             <tr>
-              <td>#{{ e.testing_id }} (Planner {{ e.planner_id or '-' }})</td>
+              <td>
+                {% set tid = e.testing_id %}
+                {% if tid %}
+                  <div class="notification-edit" contenteditable="true" data-testing-id="{{ tid }}">#{{ tid }} (Planner {{ e.planner_id or '-' }})</div>
+                  <button class="btn post-it" type="button" data-testing-id="{{ tid }}" aria-label="Post it">Post it!</button>
+                  <span class="saved-indicator" aria-hidden="true"></span>
+                {% else %}
+                  #{{ e.testing_id or '-' }} (Planner {{ e.planner_id or '-' }})
+                {% endif %}
+              </td>
               <td>{{ e.department or '' }}</td>
               <td>{{ e.equipment or '' }}</td>
               <td>{{ e.test_type or '' }}</td>
+              <td>{{ e.pm_date or '-' }}</td>
+              <td>{{ e.schedule_type or '-' }}</td>
+              <td>{{ e.done_tested_date or '-' }}</td>
               <td><span class="badge {{ 'alarm-critical' if (e.alarm_level or '')|lower == 'critical' else ('alarm-warning' if (e.alarm_level or '')|lower == 'warning' else 'toast-info') }}">{{ e.alarm_level }}</span></td>
-              <td style="max-width:320px; white-space:normal;">{{ e.notes or '-' }}</td>
+              <td class="notes-cell" style="max-width:320px; white-space:normal;">{{ e.notes or '-' }}</td>
               <td>
                 {# Render one or more attachments if present #}
                 {% if e.attachments and e.attachments|length > 0 %}
@@ -58,5 +172,33 @@
       </table>
     </div>
   </main>
+  <style>
+    .notification-edit { padding:6px 8px; border-radius:4px; border:1px dashed transparent; min-width:220px; display:inline-block; }
+    .notification-edit:focus { outline:none; border-color:#bbb; background:#fffef8; }
+    .saved-indicator { margin-left:6px; color:green; font-size:12px; display:none; }
+    .saved-indicator.visible { display:inline; }
+  /* Notes cell: allow wrapping and breaking long words (duplicate block to cover both template sections) */
+  td.notes-cell { white-space:normal !important; overflow-wrap:break-word; word-wrap:break-word; word-break:break-word; max-width:320px; }
+  </style>
+  <script>
+    (function(){
+      const prefix = 'notif_local_';
+      function keyFor(id){ return prefix + id; }
+      function markSaved(el){ const s = el.nextElementSibling; if(s){ s.classList.add('visible'); s.textContent='Saved'; setTimeout(()=>{ s.classList.remove('visible'); s.textContent=''; }, 1200); } }
+      function loadAll(){ document.querySelectorAll('.notification-edit').forEach(el=>{
+        const id = el.dataset.testingId; const v = localStorage.getItem(keyFor(id)); if(v!==null){ el.textContent = v; }
+      }); }
+      function save(el){ const id = el.dataset.testingId; if(!id) return; const v = el.textContent.trim(); if(v.length===0) { localStorage.removeItem(keyFor(id)); } else { localStorage.setItem(keyFor(id), v); } markSaved(el); }
+      document.addEventListener('DOMContentLoaded', ()=>{
+        loadAll();
+        document.body.addEventListener('keydown', (ev)=>{
+          if(ev.key === 'Enter' && ev.target && ev.target.classList && ev.target.classList.contains('notification-edit')){
+            ev.preventDefault(); ev.target.blur();
+          }
+        });
+        document.body.addEventListener('blur', (ev)=>{ if(ev.target && ev.target.classList && ev.target.classList.contains('notification-edit')){ save(ev.target); } }, true);
+      });
+    })();
+  </script>
 </body>
 </html>
