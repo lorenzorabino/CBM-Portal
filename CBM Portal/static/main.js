@@ -128,7 +128,16 @@ function populateDateIndicator(){
     const elDay = document.getElementById('date-indicator-day');
     const elWeek = document.getElementById('date-indicator-week');
     const wkPicker = document.getElementById('kpi-week-picker');
-    const now = new Date();
+    // If server provided a selected PM date, prefer it for the KPI indicator
+    const pmFromServer = (document.getElementById('kpi-date-indicator') || {}).dataset ? (document.getElementById('kpi-date-indicator').dataset.pmDate || '') : '';
+    let now = new Date();
+    if (pmFromServer) {
+        try {
+            // pmFromServer is ISO-like; use only date part
+            now = new Date();
+            if (isNaN(now.getTime())) now = new Date();
+        } catch (_) { now = new Date(); }
+    }
     const [y,w] = isoWeekAndYear(now);
     // compact single-line: Weekday, Mon D • Wnn YYYY
     const weekday = now.toLocaleDateString(undefined, { weekday: 'short' });
@@ -509,7 +518,10 @@ function renderWarnCorrectedStack() {
     if (!el || typeof Chart === 'undefined') return;
     const basisSel = document.getElementById('basisToggle');
     const basis = (basisSel && basisSel.value) || 'planner';
-    fetch('/api/dashboard/weekly_metrics?weeks=12&basis=' + encodeURIComponent(basis))
+    // If we're on the validation_results page, use the Validations-specific metrics endpoint
+    const useValidations = window.location.pathname && window.location.pathname.toLowerCase().indexOf('/validation_results') !== -1;
+    const apiUrl = useValidations ? '/api/validations/weekly_metrics' : '/api/dashboard/weekly_metrics';
+    fetch(apiUrl + '?weeks=12&basis=' + encodeURIComponent(basis))
         .then(r => r.json())
         .then(d => {
             const ctx = el.getContext('2d');
@@ -696,8 +708,10 @@ function initKpiScopeToggle() {
         buttons.forEach(b => b.setAttribute('aria-selected', b === btn ? 'true' : 'false'));
     };
     const updateHint = (scope) => {
-        if (!scopeHint) return;
-        scopeHint.textContent = (scope === 'all') ? 'Showing all-time totals | Current Date:' : 'Current Date:';
+    if (!scopeHint) return;
+    if (scope === 'all') scopeHint.textContent = 'Showing all-time totals | Current Date:';
+    else if (scope === 'pm_week') scopeHint.textContent = 'Showing PM week totals | PM Date:';
+    else scopeHint.textContent = 'Current Date:';
     };
     const updateCounts = (counts) => {
         // Map KPI selectors to fields
@@ -766,6 +780,59 @@ function initKpiScopeToggle() {
             weekPickerWrap.closest('label').style.display = (scope === 'all') ? 'none' : 'inline-flex';
         }
         fetchCounts(scope).then(updateCounts).catch(() => {});
+        // For 'all' do an online (AJAX) only update and avoid full-page navigation.
+        if (scope === 'all') {
+            return;
+        }
+        // Otherwise (weekly or pm_week) navigate so server-side board rendering aligns with selected scope
+        try {
+            const cur = new URL(window.location.href);
+            const params = new URLSearchParams(cur.search);
+                if (scope === 'pm_week') {
+                params.set('scope', 'pm_week');
+                // Prefer server-provided PM target week/year (these reflect the "next week" semantics).
+                const indicator = document.getElementById('kpi-date-indicator') || {};
+                const attrs = indicator.dataset || {};
+                const pmw = attrs.pmWeek || attrs.pm_week || '';
+                const pmy = attrs.pmYear || attrs.pm_year || '';
+                if (pmw && pmy) {
+                    params.set('pm_week', String(parseInt(pmw, 10)));
+                    params.set('pm_year', String(parseInt(pmy, 10)));
+                } else {
+                    // fallback: compute ISO week/year from server-provided pm_date (older behavior)
+                    const pm = attrs.pmDate || '';
+                    if (pm) {
+                        try {
+                            const d = new Date(pm);
+                            const tmp = (d instanceof Date && !isNaN(d)) ? d : new Date(pm + 'T00:00:00');
+                            const target = new Date(Date.UTC(tmp.getFullYear(), tmp.getMonth(), tmp.getDate()));
+                            target.setUTCDate(target.getUTCDate() + 3 - (target.getUTCDay() + 6) % 7);
+                            const year = target.getUTCFullYear();
+                            const firstThursday = new Date(Date.UTC(year,0,4));
+                            const week = 1 + Math.round(((target - firstThursday) / 86400000 - 3 + (firstThursday.getUTCDay() + 6) % 7) / 7);
+                            params.set('pm_year', String(year));
+                            params.set('pm_week', String(week));
+                        } catch (err) { }
+                    }
+                }
+            } else {
+                params.set('scope', 'weekly');
+                const weekInput = document.getElementById('kpi-week-picker');
+                if (weekInput && weekInput.value) {
+                    const parts = (weekInput.value || '').split('-W');
+                    if (parts.length === 2) {
+                        params.set('year', parts[0]);
+                        params.set('week', String(parseInt(parts[1], 10)));
+                    }
+                }
+                params.delete('pm_week');
+                params.delete('pm_year');
+            }
+            cur.search = params.toString();
+            if (cur.toString() !== window.location.href) window.location.href = cur.toString();
+        } catch (err) {
+            // ignore navigation errors
+        }
     };
     buttons.forEach(b => b.addEventListener('click', onClick));
 
@@ -825,3 +892,64 @@ function animateNumber(el, from, to, duration) {
     }
     requestAnimationFrame(step);
 }
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.body.addEventListener('click', async (e) => {
+    if (!e.target.classList.contains('notification-post-btn')) return;
+
+    const btn = e.target;
+    const row = btn.closest('tr');
+    if (!row) return;
+
+    // Prefer explicit testing id from the button or the row dataset
+    const testingId = btn.getAttribute('data-testing-id') || row.getAttribute('data-testing-id') || row.dataset.testingId;
+    if (!testingId) { alert('Failed to post notification: testing_id required'); return; }
+
+    // Collect notification value (prefer the new numeric input), then other cells
+    const notificationText = row.querySelector('.notif-input')?.value?.trim() || row.querySelector('.notification-edit')?.textContent.trim() || '';
+    const cells = row.querySelectorAll('td');
+        const payload = {
+            testing_id: Number(testingId),
+            notification: notificationText,
+      department: cells[1]?.textContent.trim() || '',
+      equipment: cells[2]?.textContent.trim() || '',
+      test_type: cells[3]?.textContent.trim() || '',
+      pm_date: cells[4]?.textContent.trim() || '',
+      schedule_type: cells[5]?.textContent.trim() || '',
+      done_tested_date: cells[6]?.textContent.trim() || '',
+      alarm_level: cells[7]?.textContent.trim() || '',
+      notes: cells[8]?.textContent.trim() || '',
+    };
+
+    try {
+      const res = await fetch('/api/notification/post', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+
+      if (data.ok) {
+                // Move row to "With SAP Notifications" table (sanitize cloned node so it is not editable)
+                const withSapTable = document.querySelectorAll('.table-wrapper')[1].querySelector('tbody');
+                const cloned = row.cloneNode(true);
+                // remove editable attributes and post buttons from the cloned row
+                cloned.querySelectorAll('.notification-edit').forEach(el=>{
+                    if(el.hasAttribute('contenteditable')) el.removeAttribute('contenteditable');
+                    el.setAttribute('aria-readonly','true');
+                    el.classList.add('notification-readonly');
+                });
+                cloned.querySelectorAll('.notification-post-btn').forEach(btn=>btn.remove());
+                withSapTable.appendChild(cloned);
+
+                // Optionally remove from "For SAP"
+                row.remove();
+      } else {
+        alert('Failed to post notification: ' + (data.error || 'Unknown error'));
+      }
+    } catch (err) {
+      console.error('Error posting notification:', err);
+      alert('Error posting notification');
+    }
+  });
+});

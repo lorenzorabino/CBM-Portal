@@ -1,256 +1,256 @@
-<!DOCTYPE html>
-<html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Planner Entries</title>
-  <link rel="stylesheet" href="/static/style.css">
-  <script src="/static/main.js" defer></script>
-  <style>
-    /* Compact the type filter checkboxes and labels */
-    #typeFilterForm .type-badges { display:flex; gap:0; flex-wrap:wrap; align-items:center; }
-    #typeFilterForm label { display:inline-flex; align-items:center; gap:0; margin:0 8px 0 0; padding:0; line-height:1; }
-  #typeFilterForm input[type="checkbox"] { margin:0 4px 0 0; }
-  /* Simple modal styles */
-  .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.35);display:none;align-items:center;justify-content:center;z-index:1000}
-  .modal{background:#fff;border:1px solid #ccc;border-radius:6px;min-width:280px;max-width:90vw;padding:12px;box-shadow:0 6px 24px rgba(0,0,0,.2)}
-  .modal header{font-weight:600;margin-bottom:8px}
-  .modal .actions{display:flex;gap:8px;justify-content:flex-end;margin-top:10px}
-  .btn-green{border:1px solid #2b7;background:#2b7;color:#fff;padding:2px 6px;border-radius:3px;cursor:pointer}
-  .btn-ghost{border:1px solid #aaa;background:#fff;color:#333;padding:2px 6px;border-radius:3px;cursor:pointer}
-  </style>
+    <meta charset="utf-8" />
+    <title>CBM • Planner Entries</title>
+    <meta name="description" content="CBM Portal Planner Entries" />
 </head>
-<body>
-  <header class="page-header">
-    <h1>Planner Entries</h1>
-    <div class="action-right">
-      <a href="/planner" class="btn-secondary">Back to Planner</a>
+{% extends 'technician/_planner_base.html' %}
+{% block planner_content %}
+
+
+<!-- Filter Form -->
+<form id="entriesFilterForm" class="auto-filter-form filter-form" method="GET" action="/planner_entries">
+  <div class="filter-row">
+    <div class="filter-group">
+      <label for="filter_week">Week</label>
+      <input type="number" min="1" max="52" id="filter_week" name="filter_week" value="{{ filter_week }}" placeholder="1-52" aria-label="Week">
     </div>
-  </header>
-
-  <main class="planner-container">
-  <form id="entriesFilterForm" class="auto-filter-form" method="GET" action="/planner_entries" style="display:flex; align-items:center; gap:8px; flex-wrap: wrap;">
-      <label for="filter_week">Week:</label>
-      <input type="number" min="1" max="52" id="filter_week" name="filter_week" value="{{ filter_week }}" style="width: 3rem;" placeholder="1-52">
-
-      <label for="filter_year">Year:</label>
-      <input type="number" id="filter_year" name="filter_year" value="{{ filter_year }}" style="width: 3rem;">
-
-  <label for="filter_department">Department:</label>
-  <select id="filter_department" name="filter_department" style="height: 32px; width: 180px;">
+    <div class="filter-group">
+      <label for="filter_year">Year</label>
+      <input type="number" id="filter_year" name="filter_year" value="{{ filter_year }}" aria-label="Year">
+    </div>
+    <div class="filter-group">
+      <label for="filter_department">Department</label>
+      <select id="filter_department" name="filter_department">
         <option value="">All</option>
         {% for dept in department_list %}
           <option value="{{ dept }}" {% if filter_department == dept %}selected{% endif %}>{{ dept }}</option>
         {% endfor %}
       </select>
-
-  <label for="filter_equipment">Equipment:</label>
-  <select id="filter_equipment" name="filter_equipment" style="width: 180px; height: 32px;">
+    </div>
+    <div class="filter-group">
+      <label for="filter_equipment">Equipment</label>
+      <select id="filter_equipment" name="filter_equipment">
         <option value="">All</option>
         {% for eq in equipment_list %}
           <option value="{{ eq }}" {% if filter_equipment == eq %}selected{% endif %}>{{ eq }}</option>
         {% endfor %}
       </select>
-
-      <label for="filter_pm_date">PM Date:</label>
-  <input type="date" id="filter_pm_date" name="filter_pm_date" value="{{ filter_pm_date }}" style="height: 20px;">
-
-  <a href="/planner_entries" class="btn-secondary" style="text-decoration:none; padding:6px 10px; border:1px solid #aaa; border-radius:4px;">Reset</a>
-    </form>
-    <script>
-      document.addEventListener('DOMContentLoaded', function() {
-        const dep = document.getElementById('filter_department');
-        const eq = document.getElementById('filter_equipment');
-        const pm = document.getElementById('filter_pm_date');
-        const form = document.getElementById('entriesFilterForm');
-        if (dep && form) {
-          dep.addEventListener('change', () => {
-            if (eq) eq.value = '';
-            if (form.requestSubmit) form.requestSubmit(); else form.submit();
-          });
-        }
-        if (eq && form) {
-          eq.addEventListener('change', () => {
-            if (form.requestSubmit) form.requestSubmit(); else form.submit();
-          });
-        }
-        if (pm && form) {
-          pm.addEventListener('change', () => {
-            if (form.requestSubmit) form.requestSubmit(); else form.submit();
-          });
-        }
-      });
-    </script>
-
-  <table class="planner-table no-wrap" style="margin-top: 12px;">
-      <thead>
-        <tr>
-          <th>ID</th>
-          <th>Week</th>
-          <th>Year</th>
-          <th>Department</th>
-          <th>Equipment</th>
-          <th>Date</th>
-          <th>Day</th>
-          <th>PM Date</th>
-          <th>PM Week</th>
-          <th>Schedule Type</th>
-          <th>Status/Alarm</th>
-          <th>Tasks</th>
-          <th>
-            <div>Testing Types</div>
-            <form id="typeFilterForm" method="GET" action="/planner_entries" style="display:flex; flex-direction:column; gap:4px; align-items:flex-start;">
-              <div class="type-badges">
-                <label><input type="checkbox" name="type_filter" value="VA" onchange="this.form.submit()" {% if 'VA' in request.args.getlist('type_filter') %}checked{% endif %}>VA</label>
-                <label><input type="checkbox" name="type_filter" value="OA" onchange="this.form.submit()" {% if 'OA' in request.args.getlist('type_filter') %}checked{% endif %}>OA</label>
-                <label><input type="checkbox" name="type_filter" value="TI" onchange="this.form.submit()" {% if 'TI' in request.args.getlist('type_filter') %}checked{% endif %}>TI</label>
-                <label><input type="checkbox" name="type_filter" value="UA" onchange="this.form.submit()" {% if 'UA' in request.args.getlist('type_filter') %}checked{% endif %}>UA</label>
-                <label><input type="checkbox" name="type_filter" value="DMA" onchange="this.form.submit()" {% if 'DMA' in request.args.getlist('type_filter') %}checked{% endif %}>DMA</label>
-                <label><input type="checkbox" name="type_filter" value="ULD" onchange="this.form.submit()" {% if 'ULD' in request.args.getlist('type_filter') %}checked{% endif %}>ULD</label>
-                <label><input type="checkbox" name="type_filter" value="DB" onchange="this.form.submit()" {% if 'DB' in request.args.getlist('type_filter') %}checked{% endif %}>DB</label>
-                <label><input type="checkbox" name="type_filter" value="Oth" onchange="this.form.submit()" {% if 'Oth' in request.args.getlist('type_filter') %}checked{% endif %}>Oth</label>
-              </div>
-              <!-- Preserve existing filters -->
-              <input type="hidden" name="filter_week" value="{{ filter_week }}" />
-              <input type="hidden" name="filter_year" value="{{ filter_year }}" />
-              <input type="hidden" name="filter_department" value="{{ filter_department }}" />
-              <input type="hidden" name="filter_equipment" value="{{ filter_equipment }}" />
-              <input type="hidden" name="filter_pm_date" value="{{ filter_pm_date }}" />
-            </form>
-          </th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for p in recent_planners %}
-          <tr>
-            <td>{{ p.id }}</td>
-            <td>{{ p.week_number }}</td>
-            <td>{{ p.year }}</td>
-            <td>{{ p.department }}</td>
-            <td>{{ p.equipment }}</td>
-            <td>{{ p.date }}</td>
-            <td>{{ p.day }}</td>
-            <td>{{ p.pm_date }}</td>
-            <td>{{ p.pm_week_number if p.pm_week_number is not none else '' }}</td>
-            <td>
-              {% if p.schedule_type %}
-                {% set sc = p.schedule_type|lower %}
-                <span class="{{ 'schedule-planned' if sc=='planned' else ('schedule-unplanned' if sc=='unplanned' else ('schedule-validation' if sc=='validation' else '')) }}">{{ p.schedule_type }}</span>
-              {% else %}
-                -
-              {% endif %}
-            </td>
-            <td>
-              {% set cc = p.completed_count or 0 %}
-              {% set at = p.alarm_filled or 0 %}
-              {% set tt = p.total_tests or 0 %}
-              <span class="badge">Completed: {{ cc }}/{{ tt }}</span>
-              <span class="badge">Alarm: {{ at }}/{{ tt }}</span>
-              {% if p.worst_alarm %}
-                <span class="badge {{ 'alarm-critical' if p.worst_alarm=='Critical' else ('alarm-warning' if p.worst_alarm=='Warning' else 'alarm-normal') }}">{{ p.worst_alarm }}</span>
-              {% endif %}
-            </td>
-              <td><a class="btn-secondary" href="{{ url_for('main.planner_tasks', planner_id=p.id) }}" style="padding:4px 8px; text-decoration:none;">View</a></td>
-            <td>
-              <!-- Small green + button to open modal -->
-              <button type="button" class="btn-green" title="Add Test Type" data-pid="{{ p.id }}" onclick="openAddTypeModal(this.dataset.pid)">+</button>
-              {% if p.testing_types_list and p.testing_types_list|length > 0 %}
-                {% for t in p.testing_types_list %}
-                  {% set key = t.lower() %}
-                  {% set cls = 'other' %}
-                  {% if 'vibration' in key %}{% set cls = 'va' %}{% endif %}
-                  {% if 'oil' in key %}{% set cls = 'oil' %}{% endif %}
-                  {% if 'thermal' in key %}{% set cls = 'thermal' %}{% endif %}
-                  {% if 'ultrasonic leak' in key %}{% set cls = 'leak' %}{% elif 'ultrasonic' in key %}{% set cls = 'ultra' %}{% endif %}
-                  {% if 'motor dynamic' in key %}{% set cls = 'mda' %}{% endif %}
-                  {% if 'balancing' in key %}{% set cls = 'balance' %}{% endif %}
-                  {# Build category segment for technician URLs #}
-                  {% set cat = 'other' %}
-                  {% if 'vibration' in key %}{% set cat = 'vibration' %}{% endif %}
-                  {% if 'oil' in key %}{% set cat = 'oil' %}{% endif %}
-                  {% if 'thermal' in key %}{% set cat = 'thermal' %}{% endif %}
-                  {% if 'ultrasonic leak' in key %}{% set cat = 'leak_detection' %}{% elif 'ultrasonic' in key %}{% set cat = 'ultrasonic' %}{% endif %}
-                  {% if 'motor dynamic' in key %}{% set cat = 'motor_dynamic' %}{% endif %}
-                  {% if 'balancing' in key %}{% set cat = 'balancing' %}{% endif %}
-                  <span style="display:inline-flex; align-items:center; gap:4px; margin:2px 4px 2px 0;">
-                    <a class="tag {{ cls }}" href="{{ url_for('technician.by_category', category=cat, planner_id=p.id) }}" title="Open {{ t }} tasks">{{ t }}</a>
-                    <form method="post" action="{{ url_for('main.remove_test_type', planner_id=p.id) }}" onsubmit="return confirm('Remove {{ t }} from this row?')" style="display:inline;">
-                      <input type="hidden" name="test_type" value="{{ t }}" />
-                      <!-- Preserve filters in return URL -->
-                      <input type="hidden" name="next" value="{{ request.full_path }}" />
-                      <button type="submit" title="Remove" style="
-                        border:1px solid #c33; background:#fff; color:#c33; cursor:pointer;
-                        width:18px; height:18px; line-height:16px; padding:0; border-radius:3px;
-                        display:inline-flex; align-items:center; justify-content:center; font-weight:bold;">×</button>
-                    </form>
-                  </span>
-                {% endfor %}
-              {% else %}
-                -
-              {% endif %}
-            </td>
-          </tr>
-        {% endfor %}
-          {% if recent_planners|length == 0 %}
-            <tr><td colspan="12" style="text-align:center; color:#666;">No entries found.</td></tr>
-        {% endif %}
-      </tbody>
-    </table>
-  </main>
-
-  <!-- Add Test Type Modal -->
-  <div id="addTypeModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-hidden="true">
-    <div class="modal">
-      <header>Add Testing Type</header>
-      <form id="addTypeForm" method="post" action="/planner/add_test_type" style="display:flex;flex-direction:column;gap:8px;">
-        <input type="hidden" name="planner_id" id="addTypePlannerId" value="" />
-        <input type="hidden" name="next" value="{{ request.full_path }}" />
-        <label>
-          <span style="display:block;margin-bottom:4px;">Select type</span>
-          <select name="test_type" id="addTypeSelect" required>
-            <option value="">-- Choose --</option>
-            <option>Vibration Analysis</option>
-            <option>Oil Analysis</option>
-            <option>Thermal Imaging</option>
-            <option>Ultrasonic Analysis</option>
-            <option>Motor Dynamic Analysis</option>
-            <option>Ultrasonic Leak Detection</option>
-            <option>Dynamic Balancing</option>
-            <option>Other</option>
-          </select>
-        </label>
-        <div class="actions">
-          <button type="button" class="btn-ghost" onclick="closeAddTypeModal()">Cancel</button>
-          <button type="submit" class="btn-green">Add</button>
-        </div>
-      </form>
+    </div>
+    <div class="filter-group">
+      <label for="filter_pm_date">PM Date</label>
+      <input type="date" id="filter_pm_date" name="filter_pm_date" value="{{ filter_pm_date }}">
+    </div>
+    <div class="filter-actions">
+      <button type="submit" class="btn btn-primary">Apply</button>
+      <a href="/planner_entries" class="btn btn-ghost">Reset</a>
     </div>
   </div>
+</form>
 
-  <script>
+<!-- Testing Types Filter -->
+<form id="typeFilterForm" class="type-filter-form" method="GET" action="/planner_entries">
+  <div class="type-badges" role="group" aria-label="Testing types">
+    {% for code in ['VA','OA','TI','UA','DMA','ULD','DB','Oth'] %}
+      <label class="type-badge">
+        <input type="checkbox" name="type_filter" value="{{ code }}"
+          onchange="this.form.submit()"
+          {% if code in request.args.getlist('type_filter') %}checked{% endif %}>
+        <span class="badge-pill">{{ code }}</span>
+      </label>
+    {% endfor %}
+  </div>
+  <!-- Preserve other filters -->
+  <input type="hidden" name="filter_week" value="{{ filter_week }}">
+  <input type="hidden" name="filter_year" value="{{ filter_year }}">
+  <input type="hidden" name="filter_department" value="{{ filter_department }}">
+  <input type="hidden" name="filter_equipment" value="{{ filter_equipment }}">
+  <input type="hidden" name="filter_pm_date" value="{{ filter_pm_date }}">
+</form>
+
+<!-- Planner Table -->
+<div class="table-wrapper">
+  <table class="table planner-table">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Week</th>
+        <th>Year</th>
+        <th>Department</th>
+        <th>Equipment</th>
+        <th>Input Date</th>
+        <th>Day</th>
+        <th>PM Date</th>
+        <th>PM Week</th>
+        <th>Schedule Type</th>
+        <th>Status/Alarm</th>
+        <th>Tasks</th>
+        <th>Testing Types</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in recent_planners %}
+        <tr>
+          <td class="text-center">{{ p.id }}</td>
+          <td class="text-center">{{ p.week_number }}</td>
+          <td class="text-center">{{ p.year }}</td>
+          <td>{{ p.department }}</td>
+          <td>{{ p.equipment }}</td>
+          <td class="text-center">{{ p.date }}</td>
+          <td class="text-center">{{ p.day }}</td>
+          <td class="text-center">{{ p.pm_date }}</td>
+          <td class="text-center">{{ p.pm_week_number or '' }}</td>
+          <td class="text-center">
+            {% if p.schedule_type %}
+              {% set sc = p.schedule_type|lower %}
+              <span class="schedule schedule-{{ sc }}">{{ p.schedule_type }}</span>
+            {% else %}
+              -
+            {% endif %}
+          </td>
+          <td class="text-center">
+            <span class="meta-item">Completed: <strong>{{ p.completed_count or 0 }}</strong>/<span class="muted">{{ p.total_tests or 0 }}</span></span>
+            <span class="meta-item">Alarm: <strong>{{ p.alarm_filled or 0 }}</strong>/<span class="muted">{{ p.total_tests or 0 }}</span></span>
+            {% if p.worst_alarm %}
+              <span class="badge-pill alarm-{{ p.worst_alarm|lower }}">{{ p.worst_alarm }}</span>
+            {% endif %}
+          </td>
+          <td class="text-center">
+            <a class="btn btn-ghost" href="{{ url_for('main.planner_tasks', planner_id=p.id) }}">View</a>
+          </td>
+          <td>
+            <button type="button" class="btn btn-add" title="Add Test Type" data-pid="{{ p.id }}" data-action="open-modal">+</button>
+            {% if p.testing_types_list %}
+              {% for t in p.testing_types_list %}
+                {% set key = t.lower() %}
+                {% if 'vibration' in key %}
+                  {% set cls, cat = 'va', 'vibration' %}
+                {% elif 'oil' in key %}
+                  {% set cls, cat = 'oil', 'oil' %}
+                {% elif 'thermal' in key %}
+                  {% set cls, cat = 'thermal', 'thermal' %}
+                {% elif 'ultrasonic leak' in key %}
+                  {% set cls, cat = 'leak', 'leak_detection' %}
+                {% elif 'ultrasonic' in key %}
+                  {% set cls, cat = 'ultra', 'ultrasonic' %}
+                {% elif 'motor dynamic' in key %}
+                  {% set cls, cat = 'mda', 'motor_dynamic' %}
+                {% elif 'balancing' in key %}
+                  {% set cls, cat = 'balance', 'balancing' %}
+                {% else %}
+                  {% set cls, cat = 'other', 'other' %}
+                {% endif %}
+                <span class="tag-wrapper">
+                  <a class="tag tag-{{ cls }}" href="{{ url_for('technician.by_category', category=cat, planner_id=p.id) }}">{{ t }}</a>
+                  <form method="post" action="{{ url_for('main.remove_test_type', planner_id=p.id) }}" onsubmit="return confirm('Remove {{ t }} from this row?')" class="inline-form">
+                    <input type="hidden" name="test_type" value="{{ t }}">
+                    <input type="hidden" name="next" value="{{ request.full_path }}">
+                    <button type="submit" class="remove-btn" title="Remove">×</button>
+                  </form>
+                </span>
+              {% endfor %}
+            {% else %}
+              -
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      {% if recent_planners|length == 0 %}
+        <tr><td colspan="13" class="no-entries">No entries found.</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+<!-- Add Test Type Modal -->
+<div id="addTypeModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-hidden="true">
+  <div class="modal-dialog" role="document" aria-labelledby="addTypeTitle">
+    <header class="modal-header">
+      <h3 id="addTypeTitle">Add Testing Type</h3>
+      <button type="button" class="close-btn" aria-label="Close modal" data-action="close-modal">×</button>
+    </header>
+    <form id="addTypeForm" method="post" action="/planner/add_test_type" class="modal-form">
+      <input type="hidden" name="planner_id" id="addTypePlannerId">
+      <input type="hidden" name="next" value="{{ request.full_path }}">
+      <label class="field">
+        <span class="field-label">Select type</span>
+        <select name="test_type" id="addTypeSelect" required>
+          <option value="">-- Choose --</option>
+          <option>Vibration Analysis</option>
+          <option>Oil Analysis</option>
+          <option>Thermal Imaging</option>
+          <option>Ultrasonic Analysis</option>
+          <option>Motor Dynamic Analysis</option>
+          <option>Ultrasonic Leak Detection</option>
+          <option>Dynamic Balancing</option>
+          <option>Other</option>
+        </select>
+      </label>
+      <div class="actions">
+        <button type="button" class="btn btn-ghost" data-action="close-modal">Cancel</button>
+        <button type="submit" class="btn btn-primary">Add</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('entriesFilterForm');
+    ['filter_department','filter_equipment','filter_pm_date'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el && form) {
+        el.addEventListener('change', () => {
+          if (form.requestSubmit) form.requestSubmit(); else form.submit();
+        });
+      }
+    });
+
+    // Modal behavior: open/close by data attributes for accessibility
+    const modal = document.getElementById('addTypeModal');
+    const pidInput = document.getElementById('addTypePlannerId');
+    const selectEl = document.getElementById('addTypeSelect');
+
     function openAddTypeModal(plannerId){
-      const m = document.getElementById('addTypeModal');
-      const pid = document.getElementById('addTypePlannerId');
-      const sel = document.getElementById('addTypeSelect');
-      if(!m||!pid||!sel) return;
-      pid.value = String(plannerId);
-      sel.value = '';
-      m.style.display = 'flex';
-      m.setAttribute('aria-hidden','false');
-      sel.focus();
+      if(!modal || !pidInput || !selectEl) return;
+      pidInput.value = plannerId;
+      selectEl.value = '';
+      modal.classList.remove('hidden');
+      modal.classList.add('open');
+      modal.setAttribute('aria-hidden','false');
+      // trap focus to select
+      selectEl.focus();
     }
     function closeAddTypeModal(){
-      const m = document.getElementById('addTypeModal');
-      if(!m) return;
-      m.style.display = 'none';
-      m.setAttribute('aria-hidden','true');
+      if(!modal) return;
+      modal.classList.add('hidden');
+      modal.classList.remove('open');
+      modal.setAttribute('aria-hidden','true');
     }
-    // Close modal when clicking backdrop
-    (function(){
-      const m = document.getElementById('addTypeModal');
-      if(!m) return;
-      m.addEventListener('click', (e)=>{ if(e.target === m) closeAddTypeModal(); });
-      document.addEventListener('keydown', (e)=>{ if(e.key === 'Escape') closeAddTypeModal(); });
-    })();
-  </script>
-</body>
-</html>
+
+    // Delegate open buttons
+    document.body.addEventListener('click', function(e){
+      const t = e.target.closest('[data-action="open-modal"]');
+      if(t){
+        const pid = t.getAttribute('data-pid');
+        openAddTypeModal(pid);
+        return;
+      }
+      if(e.target.closest('[data-action="close-modal"]') || e.target.getAttribute('data-action')==='close-modal'){
+        closeAddTypeModal();
+      }
+      if(e.target.getAttribute('data-action')==='open-modal'){
+        openAddTypeModal(e.target.dataset.pid);
+      }
+    });
+
+    // backdrop click and escape
+    modal && modal.addEventListener('click', function(e){ if(e.target === modal) closeAddTypeModal(); });
+    document.addEventListener('keydown', function(e){ if(e.key === 'Escape') closeAddTypeModal(); });
+
+    // expose old-named function for compatibility
+    window.openAddTypeModal = function(pid){ openAddTypeModal(pid); };
+    window.closeAddTypeModal = function(){ closeAddTypeModal(); };
+  });
+</script>
+
+{% endblock %}

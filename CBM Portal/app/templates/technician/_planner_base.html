@@ -1,0 +1,77 @@
+{% extends 'technician/_type_base.html' %}
+{# Planner base for planner-related pages: provides a shared sidebar and layout. #}
+{% block content %}
+  <!-- ensure planner stylesheet loads for planner pages -->
+  <link rel="stylesheet" href="/static/planner.css">
+  <div class="planner-layout">
+    <aside class="planner-sidebar" aria-label="Planner navigation">
+      <div class="sb-inner">
+        <div class="sb-top">
+          <button id="sbCollapsePlanner" class="sb-toggle" type="button" aria-label="Toggle sidebar" title="Collapse">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+          </button>
+          <div class="sb-brand">
+            <div class="logo">CBM</div>
+            <div class="brand-text">
+              <div class="brand-title">CBM Portal</div>
+              <div class="brand-sub">Reliability Dashboard</div>
+            </div>
+          </div>
+        </div>
+
+        <nav class="sb-nav" role="navigation">
+          <div class="nav-group" aria-label="Planner">
+            <a href="/manual_scheduling" class="nav-item {% if request.path == '/manual_scheduling' %}is-active{% endif %}" title="Manual Scheduling">
+              <span class="nav-icon" aria-hidden="true">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10h18v11H3z"></path><path d="M7 10V6a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v4"></path></svg>
+              </span>
+              <span class="nav-label">Manual Scheduling</span>
+            </a>
+            <a href="/planner_entries" class="nav-item {% if request.path == '/planner_entries' %}is-active{% endif %}" title="Planner Entries" {% if request.path == '/planner_entries' %}aria-current="page"{% endif %}>
+              <span class="nav-icon" aria-hidden="true">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/></svg>
+              </span>
+              <span class="nav-label">Planner Entries</span>
+            </a>
+            <a href="/notification" class="nav-item {% if request.path == '/notification' %}is-active{% endif %}" title="Notifications">
+              <span class="nav-icon" aria-hidden="true">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 17h5l-1.405-1.405A2.032 2.032 0 0 1 18 14.158V11a6 6 0 1 0-12 0v3.159c0 .538-.214 1.055-.595 1.436L4 17h5"></path></svg>
+              </span>
+              <span class="nav-label">SAP Notifications</span>
+            </a>
+            <a href="/validation_results" class="nav-item {% if request.path == '/validation_results' %}is-active{% endif %}" title="Validations">
+              <span class="nav-icon" aria-hidden="true">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path></svg>
+              </span>
+              <span class="nav-label">Validations</span>
+            </a>
+          </div>
+        </nav>
+
+        <div class="sb-bottom">
+          <a href="{{ url_for('main.index') }}" class="nav-item" title="Back to Dashboard">
+            <span class="nav-icon">🏠</span>
+            <span class="nav-label">Dashboard</span>
+          </a>
+        </div>
+      </div>
+    </aside>
+
+    <main class="planner-shell" id="plannerMain" tabindex="-1">
+      {% block planner_content %}{% endblock %}
+    </main>
+  </div>
+  <script>
+    // Hide global sidebar and remove its app-shell margin while on planner pages
+    (function(){
+      document.addEventListener('DOMContentLoaded', function(){
+        var globalSidebar = document.querySelector('.cbm-sidebar');
+        var appShell = document.querySelector('.app-shell');
+        if(globalSidebar) globalSidebar.classList.add('planner-hidden');
+        if(appShell) appShell.classList.add('app-shell--planner');
+        // restore when navigating away (optional)
+        window.addEventListener('beforeunload', function(){ if(globalSidebar) globalSidebar.classList.remove('planner-hidden'); if(appShell) appShell.classList.remove('app-shell--planner'); });
+      });
+    })();
+  </script>
+{% endblock %}

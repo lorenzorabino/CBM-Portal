@@ -11,7 +11,7 @@ def index():
     technicians = []
     testings = []
     equipments = []
-    # Dashboard filters (week/year)
+    # Dashboard filters (week/year) and scope
     from datetime import datetime
     now = datetime.now()
     try:
@@ -28,6 +28,32 @@ def index():
         sel_year = int(year) if year else now.year
     except Exception:
         sel_year = now.year
+    scope = (request.args.get('scope') or '').strip().lower() or 'weekly'
+    # Determine PM-week target: when scope is pm_week we want to show the "next" ISO week
+    # (e.g. if current/selected week is 36, PM Week should show 37). Allow explicit pm_week/pm_year params.
+    pm_week_param = (request.args.get('pm_week') or '').strip()
+    pm_year_param = (request.args.get('pm_year') or '').strip()
+    pm_sel_week = None
+    pm_sel_year = None
+    try:
+        if pm_week_param:
+            pm_sel_week = int(pm_week_param)
+            pm_sel_year = int(pm_year_param) if pm_year_param else sel_year
+        else:
+            # compute next ISO week after selected week/year
+            from datetime import date, timedelta
+            try:
+                base = date.fromisocalendar(sel_year, sel_week, 1)
+                nxt = base + timedelta(weeks=1)
+                iso = nxt.isocalendar()
+                pm_sel_year = iso[0]
+                pm_sel_week = iso[1]
+            except Exception:
+                pm_sel_week = sel_week + 1
+                pm_sel_year = sel_year
+    except Exception:
+        pm_sel_week = sel_week + 1
+        pm_sel_year = sel_year
     # KPIs and queues
     from sqlalchemy import text
     counts = {
@@ -218,42 +244,55 @@ def index():
                            FROM CBM_Testing tt WHERE tt.planner_id = p.id), '') AS worst_alarm,
                   COALESCE((SELECT COUNT(*) FROM CBM_Testing tt WHERE tt.planner_id = p.id AND TRIM(COALESCE(tt.Done_Tested_Date,''))<>''),0) AS done_date_count
                 FROM Planner p
-                WHERE p.week_number = :w AND p.year = :y
-                ORDER BY p.id DESC LIMIT 100
+                ORDER BY p.id DESC LIMIT 1000
                 """
             )
-            rows = conn.execute(board_sql, {"w": sel_week, "y": sel_year}).fetchall()
+            rows = conn.execute(board_sql).fetchall()
             for r in rows:
                 # compute pm week number from pm_date if present
                 pm_week = None
+                pm_year = None
                 try:
                     if r[5]:
                         from datetime import datetime
                         ds = str(r[5])[:10]
                         dt = datetime.fromisoformat(ds).date()
-                        pm_week = dt.isocalendar()[1]
+                        iso = dt.isocalendar()
+                        pm_week = iso[1]
+                        pm_year = iso[0]
                 except Exception:
                     pm_week = None
-                board_rows.append({
-                    "id": r[0],
-                    "week_number": r[1],
-                    "year": r[2],
-                    "department": r[3],
-                    "equipment": r[4],
-                    "pm_date": r[5],
-                    "pm_week_number": pm_week,
-                    "schedule_type": r[6],
-                    "total_tests": r[7],
-                    "completed_count": r[8],
-                    "worst_alarm": r[9],
-                    "done_date_count": r[10],
-                })
+                    pm_year = None
+                # include based on scope:
+                # - weekly: planners whose pm_date ISO week == selected week/year (sel_week/sel_year)
+                # - pm_week: planners whose pm_date ISO week == pm_sel_week/pm_sel_year (the next week)
+                include_row = True
+                if scope == 'weekly':
+                    include_row = (pm_week == sel_week and pm_year == sel_year)
+                elif scope == 'pm_week':
+                    include_row = (pm_week == pm_sel_week and pm_year == pm_sel_year)
+                if include_row:
+                    board_rows.append({
+                        "id": r[0],
+                        "week_number": r[1],
+                        "year": r[2],
+                        "department": r[3],
+                        "equipment": r[4],
+                        "pm_date": r[5],
+                        "pm_week_number": pm_week,
+                        "schedule_type": r[6],
+                        "total_tests": r[7],
+                        "completed_count": r[8],
+                        "worst_alarm": r[9],
+                        "done_date_count": r[10],
+                    })
 
             # Equipment-level aggregation for the week (used to render equipment cards with progress)
             equipment_board = []
             eq_sql = text(
                 """
                 SELECT e.EquipmentID as id, e.Department as department, COALESCE(e.Machine, e.Equipment, '') as equipment,
+                  COALESCE((SELECT MIN(p2.pm_date) FROM CBM_Testing tt JOIN Planner p2 ON p2.id = tt.planner_id WHERE tt.Equipment_ID = e.EquipmentID AND p2.week_number = :w AND p2.year = :y), '') AS pm_date,
                   COALESCE((SELECT COUNT(*) FROM CBM_Testing tt JOIN Planner p2 ON p2.id = tt.planner_id WHERE tt.Equipment_ID = e.EquipmentID AND p2.week_number = :w AND p2.year = :y), 0) AS total_tests,
                   COALESCE((SELECT COUNT(*) FROM CBM_Testing tt JOIN Planner p2 ON p2.id = tt.planner_id WHERE tt.Equipment_ID = e.EquipmentID AND p2.week_number = :w AND p2.year = :y AND (COALESCE(tt.Done,0)=1 OR LOWER(TRIM(COALESCE(tt.Status,''))) IN ('completed','done'))), 0) AS completed_count
                 FROM Equipment e
@@ -265,17 +304,47 @@ def index():
                 """
             )
             try:
-                erows = conn.execute(eq_sql, {"w": sel_week, "y": sel_year}).fetchall()
+                erows = conn.execute(eq_sql).fetchall()
                 for rr in erows:
-                    equipment_board.append({
-                        "id": rr[0],
-                        "department": rr[1],
-                        "equipment": rr[2] or '',
-                        "total_tests": int(rr[3] or 0),
-                        "completed_count": int(rr[4] or 0),
-                    })
+                    # rr[3] is pm_date from subquery
+                    pm_date_val = (str(rr[3])[:10] if rr[3] else None)
+                    include = False
+                    if pm_date_val:
+                        try:
+                            from datetime import datetime
+                            dt = datetime.fromisoformat(pm_date_val).date()
+                            iso = dt.isocalendar()
+                            if iso[1] == sel_week and iso[0] == sel_year:
+                                include = True
+                        except Exception:
+                            include = False
+                    if include:
+                        equipment_board.append({
+                            "id": rr[0],
+                            "department": rr[1],
+                            "equipment": rr[2] or '',
+                            "pm_date": pm_date_val,
+                            "total_tests": int(rr[4] or 0),
+                            "completed_count": int(rr[5] or 0),
+                        })
             except Exception:
                 equipment_board = []
+            # Representative PM date for this selected week (use earliest PM date if available)
+            sel_pm_date = None
+            sel_pm_day = None
+            try:
+                pm_min = conn.execute(text("SELECT MIN(pm_date) FROM Planner WHERE week_number = :w AND year = :y AND TRIM(COALESCE(pm_date,'')) <> ''"), {"w": sel_week, "y": sel_year}).scalar()
+                if pm_min:
+                    sel_pm_date = str(pm_min)[:10]
+                    try:
+                        from datetime import datetime
+                        dt = datetime.fromisoformat(sel_pm_date)
+                        sel_pm_day = dt.strftime('%a')
+                    except Exception:
+                        sel_pm_day = None
+            except Exception:
+                sel_pm_date = None
+                sel_pm_day = None
     except Exception:
         pass
     return render_template(
@@ -293,8 +362,222 @@ def index():
         recent_attachments=recent_attachments,
         board_rows=board_rows,
     equipment_board=equipment_board,
+    sel_pm_date=sel_pm_date,
+    sel_pm_day=sel_pm_day,
+    pm_sel_week=pm_sel_week,
+    pm_sel_year=pm_sel_year,
         # Removed warning_longest KPI card context
     )
+
+
+@main.route('/notification', methods=['GET'])
+def notification():
+    """Notification management page.
+
+    NEW LOGIC (2025-09-08):
+    - Source rows from CBM_Testing (critical | warning) joined to Planner.
+    - We now use the Planner.notification column (integer user supplies) to
+      decide table placement instead of free-text Notification table rows.
+    - "For SAP Notifications" => Planner.notification IS NULL OR ''
+    - "With SAP Notifications" => Planner.notification IS NOT NULL AND <> ''
+    - Updates are written to portal_demo3.db (local demo DB) per requirement.
+    """
+    import os, sqlite3
+    from sqlalchemy import text
+
+    base_dir = os.path.dirname(os.path.dirname(__file__))
+    demo_db = os.path.join(base_dir, 'database', 'portal_demo3.db')
+
+    rows = []
+    # Attempt to query from portal_demo3.db first (preferred persistence target)
+    used_demo = False
+    if os.path.exists(demo_db):
+        try:
+            con = sqlite3.connect(demo_db)
+            con.row_factory = sqlite3.Row
+            cur = con.cursor()
+            # Ensure notification column exists (auto-migrate if missing)
+            try:
+                info = [r[1] for r in cur.execute('PRAGMA table_info(Planner)')]
+                if 'notification' not in info:
+                    cur.execute('ALTER TABLE Planner ADD COLUMN notification TEXT')
+                    con.commit()
+            except Exception:
+                pass
+
+            try:
+                q = (
+                    "SELECT t.Testing_ID, t.Test_Type, t.Alarm_Level, t.Notes, t.Done_Tested_Date, "
+                    "p.id AS planner_id, p.department, p.equipment, p.pm_date, p.week_number, p.year, p.schedule_type, p.notification "
+                    "FROM CBM_Testing t JOIN Planner p ON p.id = t.planner_id "
+                    "WHERE LOWER(TRIM(COALESCE(t.Alarm_Level,''))) IN ('critical','warning') "
+                    "ORDER BY t.Testing_ID DESC LIMIT 1000"
+                )
+                for r in cur.execute(q):
+                    rows.append(dict(
+                        testing_id=r['Testing_ID'],
+                        planner_id=r['planner_id'],
+                        test_type=r['Test_Type'],
+                        alarm_level=r['Alarm_Level'],
+                        notes=r['Notes'],
+                        done_tested_date=r['Done_Tested_Date'],
+                        department=r['department'],
+                        equipment=r['equipment'],
+                        pm_date=r['pm_date'],
+                        week_number=(r['week_number'] if 'week_number' in r.keys() else None),
+                        year=(r['year'] if 'year' in r.keys() else None),
+                        schedule_type=r['schedule_type'],
+                        notification=(r['notification'] if 'notification' in r.keys() else None)
+                    ))
+                used_demo = True
+            finally:
+                try:
+                    con.close()
+                except Exception:
+                    pass
+        except Exception:
+            rows = []
+
+    # Fallback: use main DB engine if demo DB absent or failed
+    if not used_demo:
+        try:
+            with db.engine.begin() as conn:
+                # Try to include p.notification if exists
+                base_sql = (
+                    "SELECT t.Testing_ID, t.Test_Type, t.Alarm_Level, t.Notes, t.Done_Tested_Date, "
+                    "p.id AS planner_id, p.department, p.equipment, p.pm_date, p.week_number, p.year, p.schedule_type"
+                )
+                extra_col = ''
+                try:
+                    # quick probe
+                    conn.execute(text("SELECT p.notification FROM Planner p LIMIT 1"))
+                    extra_col = ', p.notification'
+                except Exception:
+                    extra_col = ''
+
+                sql = text(
+                    base_sql + extra_col +
+                    " FROM CBM_Testing t JOIN Planner p ON p.id = t.planner_id "
+                    "WHERE LOWER(TRIM(COALESCE(t.Alarm_Level,''))) IN ('critical','warning') "
+                    "ORDER BY t.Testing_ID DESC LIMIT 1000"
+                )
+                for r in conn.execute(sql).mappings().fetchall():
+                    rows.append(dict(
+                        testing_id=r.get('Testing_ID'),
+                        planner_id=r.get('planner_id'),
+                        test_type=r.get('Test_Type'),
+                        alarm_level=r.get('Alarm_Level'),
+                        notes=r.get('Notes'),
+                        done_tested_date=r.get('Done_Tested_Date'),
+                        department=r.get('department'),
+                        equipment=r.get('equipment'),
+                        pm_date=r.get('pm_date'),
+                        week_number=r.get('week_number') if 'week_number' in r else None,
+                        year=r.get('year') if 'year' in r else None,
+                        schedule_type=r.get('schedule_type'),
+                        notification=r.get('notification') if 'notification' in r else None
+                    ))
+        except Exception:
+            rows = []
+
+    for_sap_rows = []
+    with_sap_rows = []
+    # Attach attachments (single batched query against main DB) for all testing_ids
+    try:
+        testing_ids = [r['testing_id'] for r in rows if r.get('testing_id')]
+        if testing_ids:
+            # Deduplicate
+            uniq_ids = list({tid for tid in testing_ids})
+            # Chunk to avoid SQLite variable limits (usually 999)
+            attachments_map = { }
+            CHUNK = 400
+            from math import ceil
+            with db.engine.begin() as conn:
+                for i in range(0, len(uniq_ids), CHUNK):
+                    subset = uniq_ids[i:i+CHUNK]
+                    # Build dynamic IN
+                    placeholders = ','.join([f":id{i}_{j}" for j,_ in enumerate(subset)])
+                    params = { f"id{i}_{j}": subset[j] for j in range(len(subset)) }
+                    sql_att = text(f"SELECT id, testing_id, filename FROM CBM_Testing_Attachments WHERE testing_id IN ({placeholders})")
+                    for aid, at_tid, fname in conn.execute(sql_att, params):
+                        attachments_map.setdefault(at_tid, []).append({ 'id': aid, 'filename': fname })
+            # Assign to rows
+            for r in rows:
+                tid = r.get('testing_id')
+                r['attachments'] = attachments_map.get(tid, [])
+        else:
+            for r in rows:
+                r['attachments'] = []
+    except Exception:
+        for r in rows:
+            r['attachments'] = []
+    for r in rows:
+        notif_val = ('' if r.get('notification') is None else str(r.get('notification')).strip())
+        if notif_val == '':
+            for_sap_rows.append(r)
+        else:
+            with_sap_rows.append(r)
+
+    return render_template('notification.html', for_sap_rows=for_sap_rows, with_sap_rows=with_sap_rows, page_title='Notifications')
+
+
+
+@main.route('/api/notification/post', methods=['POST'])
+def api_notification_post():
+    """Update Planner.notification (integer) for a given testing_id.
+
+    Request JSON: { testing_id: int, notification: int }
+    - Writes to portal_demo3.db Planner.notification (auto adds column if missing).
+    - Resolves planner via CBM_Testing.planner_id.
+    """
+    import os, sqlite3
+    data = request.get_json(silent=True) or {}
+    notif_raw = data.get('notification')
+    testing_id = data.get('testing_id')
+    if testing_id is None:
+        return jsonify(ok=False, error='testing_id required'), 400
+    # Accept strings but enforce integer-only
+    try:
+        notification_val = int(str(notif_raw).strip())
+    except Exception:
+        return jsonify(ok=False, error='notification must be integer'), 400
+
+    base = os.path.dirname(os.path.dirname(__file__))
+    db_path = os.path.join(base, 'database', 'portal_demo3.db')
+    if not os.path.exists(db_path):
+        return jsonify(ok=False, error='portal_demo3.db not found'), 500
+
+    try:
+        conn = sqlite3.connect(db_path)
+        cur = conn.cursor()
+        # Ensure column exists
+        try:
+            cols = [r[1] for r in cur.execute('PRAGMA table_info(Planner)')]
+            if 'notification' not in cols:
+                cur.execute('ALTER TABLE Planner ADD COLUMN notification TEXT')
+        except Exception:
+            pass
+        # Find planner id
+        cur.execute('SELECT planner_id FROM CBM_Testing WHERE Testing_ID = ? LIMIT 1', (testing_id,))
+        row = cur.fetchone()
+        if not row:
+            return jsonify(ok=False, error='testing_id not found'), 404
+        planner_id = row[0]
+        cur.execute('UPDATE Planner SET notification = ? WHERE id = ?', (str(notification_val), planner_id))
+        if cur.rowcount == 0:
+            return jsonify(ok=False, error='planner not found'), 404
+        conn.commit()
+        return jsonify(ok=True, planner_id=planner_id, notification=notification_val)
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return jsonify(ok=False, error=str(e)), 500
+    finally:
+        try: conn.close()
+        except Exception: pass
+
 
 
 @main.route('/api/dashboard/weekly_metrics')
@@ -468,6 +751,112 @@ def api_weekly_metrics():
         pass
     # expose as a separate field; UI will use this for the line series
     resp['corrected_by_done'] = corrected_by_done
+    return jsonify(resp)
+
+
+@main.route('/api/validations/weekly_metrics')
+def api_validations_weekly_metrics():
+    """Return weekly alarm totals and corrections for Validations table.
+
+    Response format mirrors /api/dashboard/weekly_metrics for compatibility with the chart:
+    {
+      labels: [...],
+      alarms: { critical: [...], warning: [...] },
+      warnings_closed: [...],
+      criticals_closed: [...],
+      corrected_by_done: [...]
+    }
+    """
+    from datetime import date, timedelta, datetime
+    try:
+        n = int((request.args.get('weeks') or '12').strip())
+        if n < 1: n = 12
+        if n > 52: n = 52
+    except Exception:
+        n = 12
+    basis = (request.args.get('basis') or 'planner').strip().lower()
+    today = date.today()
+    pairs = []
+    for k in range(n - 1, -1, -1):
+        d = today - timedelta(weeks=k)
+        iso = d.isocalendar()
+        pairs.append((iso[0], iso[1]))
+    # unique ascending
+    uniq = []
+    seen = set()
+    for y, w in pairs:
+        key = (y, w)
+        if key not in seen:
+            seen.add(key)
+            uniq.append(key)
+
+    labels = [f"{y}-W{w:02d}" for (y, w) in pairs]
+    pair_index = { (y, w): i for i, (y, w) in enumerate(pairs) }
+
+    # init series
+    alarms_crit = [0] * len(labels)
+    alarms_warn = [0] * len(labels)
+    warnings_closed = [0] * len(labels)
+    criticals_closed = [0] * len(labels)
+    corrected_by_done = [0] * len(labels)
+
+    try:
+        with db.engine.begin() as conn:
+            # Count alarms per planner week/year (using Validations.Week/Year)
+            for idx, (yy, ww) in enumerate(pairs):
+                try:
+                    rcrit = conn.execute(text("SELECT COUNT(*) FROM Validations v WHERE v.Week = :w AND v.Year = :y AND LOWER(TRIM(COALESCE(v.Alarm,''))) = 'critical'"), {"w": ww, "y": yy}).scalar() or 0
+                    rwarn = conn.execute(text("SELECT COUNT(*) FROM Validations v WHERE v.Week = :w AND v.Year = :y AND LOWER(TRIM(COALESCE(v.Alarm,''))) = 'warning'"), {"w": ww, "y": yy}).scalar() or 0
+                except Exception:
+                    rcrit = 0; rwarn = 0
+                alarms_crit[idx] = int(rcrit)
+                alarms_warn[idx] = int(rwarn)
+
+            # Closed counts by planner week: count rows where Status indicates done OR Done_Date present
+            for idx, (yy, ww) in enumerate(pairs):
+                try:
+                    wc = conn.execute(text(
+                        "SELECT COUNT(*) FROM Validations v WHERE v.Week = :w AND v.Year = :y AND LOWER(TRIM(COALESCE(v.Alarm,''))) = 'warning' AND (LOWER(TRIM(COALESCE(v.Status,''))) IN ('done','completed') OR TRIM(COALESCE(v.Done_Date,'')) <> '')"
+                    ), {"w": ww, "y": yy}).scalar() or 0
+                except Exception:
+                    wc = 0
+                warnings_closed[idx] = int(wc)
+                try:
+                    cc = conn.execute(text(
+                        "SELECT COUNT(*) FROM Validations v WHERE v.Week = :w AND v.Year = :y AND LOWER(TRIM(COALESCE(v.Alarm,''))) = 'critical' AND (LOWER(TRIM(COALESCE(v.Status,''))) IN ('done','completed') OR TRIM(COALESCE(v.Done_Date,'')) <> '')"
+                    ), {"w": ww, "y": yy}).scalar() or 0
+                except Exception:
+                    cc = 0
+                criticals_closed[idx] = int(cc)
+
+            # Corrections grouped by Done_Date week (done-week)
+            rows = conn.execute(text(
+                "SELECT TRIM(COALESCE(v.Done_Date,'')) AS dtd, LOWER(TRIM(COALESCE(v.Alarm,''))) AS alarm FROM Validations v WHERE TRIM(COALESCE(v.Done_Date,'')) <> ''"
+            )).fetchall()
+            for dtd, alarm in rows:
+                try:
+                    ds = str(dtd)[:10]
+                    dt = datetime.fromisoformat(ds).date()
+                    iso = dt.isocalendar()
+                    key = (int(iso[0]), int(iso[1]))
+                    idx = pair_index.get(key)
+                    if idx is None:
+                        continue
+                    if alarm in ('warning','critical'):
+                        corrected_by_done[idx] += 1
+                except Exception:
+                    continue
+    except Exception:
+        # on any error return zeros/labels
+        pass
+
+    resp = dict(
+        labels=labels,
+        alarms={ 'critical': alarms_crit, 'warning': alarms_warn },
+        warnings_closed=warnings_closed,
+        criticals_closed=criticals_closed,
+        corrected_by_done=corrected_by_done,
+    )
     return jsonify(resp)
 
 
@@ -1045,77 +1434,112 @@ def validation_results_alias():
     filters = dict(week=week, year=year, department=department, equipment=equipment, alarm=alarm, status=status, limit=max_rows, test_type=test_type_filter)
     try:
         with db.engine.begin() as conn:
-            # Build query
-            select_sql = (
-                "SELECT t.Testing_ID, t.Test_Type, "
-                "COALESCE(NULLIF(TRIM(t.Status), ''), CASE WHEN COALESCE(t.Done,0)=1 THEN 'done' END, '') AS Status, "
-                "TRIM(COALESCE(t.Alarm_Level, '')) AS Alarm_Level, "
-                "t.Notes, t.Result, t.Done_Tested_Date, t.planner_id, "
-                "p.department, p.equipment, p.week_number, p.year, p.pm_date, p.schedule_type, p.proposed_target_date "
-                "FROM CBM_Testing t LEFT JOIN Planner p ON p.id = t.planner_id"
-            )
-            clauses = []
-            params = {}
-            if week:
-                clauses.append("p.week_number = :w")
-                params['w'] = week
-            if year:
-                clauses.append("p.year = :y")
-                params['y'] = year
-            if department:
-                clauses.append("p.department = :d")
-                params['d'] = department
-            if equipment:
-                clauses.append("p.equipment = :e")
-                params['e'] = equipment
-            if alarm:
-                clauses.append("LOWER(TRIM(COALESCE(t.Alarm_Level,''))) = :a")
-                params['a'] = alarm.lower()
-            if test_type_filter:
-                clauses.append("TRIM(COALESCE(t.Test_Type,'')) = :tt")
-                params['tt'] = test_type_filter
-            if status:
-                s = status.lower()
-                if s in ('completed','done'):
-                    clauses.append("(LOWER(TRIM(COALESCE(t.Status,''))) IN ('completed','done') OR COALESCE(t.Done,0)=1)")
-                elif s in ('ongoing','todo'):
-                    clauses.append("(LOWER(TRIM(COALESCE(t.Status,''))) IN ('ongoing','todo',''))")
-                else:
-                    clauses.append("LOWER(TRIM(COALESCE(t.Status,''))) = :s")
-                    params['s'] = status
-            if clauses:
-                select_sql += " WHERE " + " AND ".join(clauses)
-            select_sql += " ORDER BY t.Testing_ID DESC LIMIT :lim"
-            params['lim'] = max_rows
-
-            rows = conn.execute(text(select_sql), params).mappings().fetchall()
-            for r in rows:
-                lvl = (r.get('Alarm_Level') or '').strip().capitalize()
-                if lvl not in ('Critical','Warning','Normal'):
-                    lvl_key = 'Unknown'
-                else:
-                    # Normalize exact case
-                    lvl_key = 'Critical' if lvl.lower()=='critical' else ('Warning' if lvl.lower()=='warning' else 'Normal')
-                item = dict(
-                    Testing_ID=r.get('Testing_ID'),
-                    Test_Type=r.get('Test_Type'),
-                    Status=(r.get('Status') or 'todo'),
-                    Alarm_Level=(r.get('Alarm_Level') or ''),
-                    Notes=r.get('Notes'),
-                    Result=r.get('Result'),
-                    Done_Tested_Date=r.get('Done_Tested_Date'),
-                    planner_id=r.get('planner_id'),
-                    department=r.get('department'),
-                    equipment=r.get('equipment'),
-                    week_number=r.get('week_number'),
-                    year=r.get('year'),
-                    pm_date=r.get('pm_date'),
-                    schedule_type=r.get('schedule_type'),
-                    proposed_target_date=r.get('proposed_target_date'),
+            # If a dedicated 'Validations' table exists in the SQLite DB, prefer it.
+            has_validations = conn.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name='Validations' LIMIT 1")).fetchone()
+            if has_validations:
+                sel = text(
+                    "SELECT ID, Notification, Week, Year, Department, Equipment, Type, Schedule, Status, Alarm, Done_Date FROM Validations ORDER BY ID DESC LIMIT :lim"
                 )
-                groups[lvl_key].append(item)
-                summary[lvl_key] += 1
-                summary['Total'] += 1
+                rows = conn.execute(sel, { 'lim': max_rows }).mappings().fetchall()
+                for r in rows:
+                    alarm_val = (r.get('Alarm') or '').strip()
+                    lvl = alarm_val.capitalize() if alarm_val else 'Unknown'
+                    if lvl not in ('Critical','Warning','Normal'):
+                        lvl_key = 'Unknown'
+                    else:
+                        lvl_key = 'Critical' if lvl.lower()=='critical' else ('Warning' if lvl.lower()=='warning' else 'Normal')
+                    item = dict(
+                        Testing_ID=None,
+                        Test_Type=r.get('Type'),
+                        Status=(r.get('Status') or ''),
+                        Alarm_Level=(r.get('Alarm') or ''),
+                        Notes=r.get('Notification'),
+                        Result=None,
+                        Done_Tested_Date=r.get('Done_Date') or '',
+                        planner_id=r.get('ID'),
+                        department=r.get('Department'),
+                        equipment=r.get('Equipment'),
+                        week_number=r.get('Week'),
+                        year=r.get('Year'),
+                        pm_date=None,
+                        schedule_type=r.get('Schedule'),
+                        proposed_target_date=None,
+                    )
+                    groups[lvl_key].append(item)
+                    summary[lvl_key] += 1
+                    summary['Total'] += 1
+            else:
+                # Fallback: existing CBM_Testing + Planner based selection
+                select_sql = (
+                    "SELECT t.Testing_ID, t.Test_Type, "
+                    "COALESCE(NULLIF(TRIM(t.Status), ''), CASE WHEN COALESCE(t.Done,0)=1 THEN 'done' END, '') AS Status, "
+                    "TRIM(COALESCE(t.Alarm_Level, '')) AS Alarm_Level, "
+                    "t.Notes, t.Result, t.Done_Tested_Date, t.planner_id, "
+                    "p.department, p.equipment, p.week_number, p.year, p.pm_date, p.schedule_type, p.proposed_target_date "
+                    "FROM CBM_Testing t LEFT JOIN Planner p ON p.id = t.planner_id"
+                )
+                clauses = []
+                params = {}
+                if week:
+                    clauses.append("p.week_number = :w")
+                    params['w'] = week
+                if year:
+                    clauses.append("p.year = :y")
+                    params['y'] = year
+                if department:
+                    clauses.append("p.department = :d")
+                    params['d'] = department
+                if equipment:
+                    clauses.append("p.equipment = :e")
+                    params['e'] = equipment
+                if alarm:
+                    clauses.append("LOWER(TRIM(COALESCE(t.Alarm_Level,''))) = :a")
+                    params['a'] = alarm.lower()
+                if test_type_filter:
+                    clauses.append("TRIM(COALESCE(t.Test_Type,'')) = :tt")
+                    params['tt'] = test_type_filter
+                if status:
+                    s = status.lower()
+                    if s in ('completed','done'):
+                        clauses.append("(LOWER(TRIM(COALESCE(t.Status,''))) IN ('completed','done') OR COALESCE(t.Done,0)=1)")
+                    elif s in ('ongoing','todo'):
+                        clauses.append("(LOWER(TRIM(COALESCE(t.Status,''))) IN ('ongoing','todo',''))")
+                    else:
+                        clauses.append("LOWER(TRIM(COALESCE(t.Status,''))) = :s")
+                        params['s'] = status
+                if clauses:
+                    select_sql += " WHERE " + " AND ".join(clauses)
+                select_sql += " ORDER BY t.Testing_ID DESC LIMIT :lim"
+                params['lim'] = max_rows
+
+                rows = conn.execute(text(select_sql), params).mappings().fetchall()
+                for r in rows:
+                    lvl = (r.get('Alarm_Level') or '').strip().capitalize()
+                    if lvl not in ('Critical','Warning','Normal'):
+                        lvl_key = 'Unknown'
+                    else:
+                        # Normalize exact case
+                        lvl_key = 'Critical' if lvl.lower()=='critical' else ('Warning' if lvl.lower()=='warning' else 'Normal')
+                    item = dict(
+                        Testing_ID=r.get('Testing_ID'),
+                        Test_Type=r.get('Test_Type'),
+                        Status=(r.get('Status') or 'todo'),
+                        Alarm_Level=(r.get('Alarm_Level') or ''),
+                        Notes=r.get('Notes'),
+                        Result=r.get('Result'),
+                        Done_Tested_Date=r.get('Done_Tested_Date'),
+                        planner_id=r.get('planner_id'),
+                        department=r.get('department'),
+                        equipment=r.get('equipment'),
+                        week_number=r.get('week_number'),
+                        year=r.get('year'),
+                        pm_date=r.get('pm_date'),
+                        schedule_type=r.get('schedule_type'),
+                        proposed_target_date=r.get('proposed_target_date'),
+                    )
+                    groups[lvl_key].append(item)
+                    summary[lvl_key] += 1
+                    summary['Total'] += 1
     except Exception:
         pass
 
