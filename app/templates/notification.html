@@ -40,7 +40,15 @@
           {% if 'for sap' in (e.notification or '')|lower %}
             {% set ns.count = ns.count + 1 %}
             <tr>
-              <td style="white-space:normal; max-width:320px;">{{ e.notification or '-' }}</td>
+              <td style="white-space:normal; max-width:320px;">
+                {# Editable notification field: empty by default (no default value) #}
+                {% set tid = e.testing_id %}
+                {% if tid %}
+                  <div class="notification-edit" contenteditable="true" data-testing-id="{{ tid }}" aria-label="Edit notification"></div>
+                {% else %}
+                  <div class="notification-edit" contenteditable="true" data-entry-idx="{{ ns.count }}" aria-label="Edit notification"></div>
+                {% endif %}
+              </td>
               <td>{{ e.department or '' }}</td>
               <td>{{ e.equipment or '' }}</td>
               <td>{{ e.test_type or '' }}</td>
@@ -128,8 +136,26 @@
     /* Notes cell: allow wrapping and breaking long words */
     td.notes-cell { white-space:normal !important; overflow-wrap:break-word; word-wrap:break-word; word-break:break-word; max-width:320px; }
     .badge { padding:4px 8px; border-radius:4px; }
-    .alarm-critical { background:#c62828; color:#fff; }
-    .alarm-warning { background:#ff9800; color:#fff; }
+    /* Editable notification textbox styling */
+    .notification-edit {
+      padding:6px 8px;
+      border:1px solid #e6e9ee;
+      border-radius:6px;
+      min-height:36px;
+      display:inline-block;
+      width:100%;
+      box-sizing:border-box;
+      background: #fff;
+      color: #0f172a;
+    }
+    .notification-edit:focus {
+      outline: none;
+      border-color: #60a5fa;
+      box-shadow: 0 0 0 4px rgba(96,165,250,0.12);
+      background: #fffef8;
+    }
+    .alarm-critical { color:#520000; }
+    .alarm-warning { color:#ff0000; }
     /* Make tables expand to available window width and be responsive */
     .table-wrapper { width: 100%; overflow-x: auto; }
     .planner-table { width: 100%; min-width: 900px; border-collapse: collapse; }
@@ -167,3 +193,23 @@
   </style>
 
 {% endblock %}
+
+<script>
+  (function(){
+    const prefix = 'notif_local_';
+    function keyForId(id){ return prefix + id; }
+    function keyForIdx(i){ return prefix + 'idx_' + i; }
+    function loadAll(){ document.querySelectorAll('.notification-edit').forEach(el=>{
+      const id = el.dataset.testingId;
+      const idx = el.dataset.entryIdx;
+      let k = id ? keyForId(id) : (idx ? keyForIdx(idx) : null);
+      if(k){ const v = localStorage.getItem(k); if(v !== null) el.textContent = v; }
+    }); }
+    function saveEl(el){ const id = el.dataset.testingId; const idx = el.dataset.entryIdx; let k = id ? keyForId(id) : (idx ? keyForIdx(idx) : null); if(!k) return; const v = el.textContent.trim(); if(v.length===0) { localStorage.removeItem(k); } else { localStorage.setItem(k, v); } }
+    document.addEventListener('DOMContentLoaded', ()=>{
+      loadAll();
+      document.body.addEventListener('blur', (ev)=>{ if(ev.target && ev.target.classList && ev.target.classList.contains('notification-edit')){ saveEl(ev.target); } }, true);
+      document.body.addEventListener('keydown', (ev)=>{ if(ev.key === 'Enter' && ev.target && ev.target.classList && ev.target.classList.contains('notification-edit')){ ev.preventDefault(); ev.target.blur(); } });
+    });
+  })();
+</script>

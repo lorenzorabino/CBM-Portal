@@ -450,7 +450,7 @@ def notification():
             # Also include CBM_Testing rows with Alarm_Level 'critical' or 'warning'
             try:
                 tsel = text(
-                    "SELECT t.Testing_ID, t.Test_Type, t.planner_id, t.Alarm_Level, t.Notes, p.Department, p.Equipment, p.pm_date AS PM_Date, p.schedule_type AS Scheduled_Type, t.Done_Tested_Date "
+                    "SELECT t.Testing_ID, t.Test_Type, t.planner_id, t.Alarm_Level, t.Notes, p.department, p.equipment, p.pm_date AS PM_Date, p.schedule_type AS Scheduled_Type, t.Done_Tested_Date "
                     "FROM CBM_Testing t JOIN Planner p ON p.id = t.planner_id "
                     "WHERE LOWER(TRIM(COALESCE(t.Alarm_Level,''))) IN ('critical','warning') ORDER BY t.Testing_ID DESC LIMIT :lim"
                 )
@@ -461,8 +461,8 @@ def notification():
                     planner_id = tr.get('planner_id')
                     alarm_level = tr.get('Alarm_Level')
                     notes = tr.get('Notes')
-                    department = tr.get('Department')
-                    equipment = tr.get('Equipment')
+                    department = tr.get('department')
+                    equipment = tr.get('equipment')
                     pm_date = tr.get('PM_Date')
                     schedule_type = tr.get('Scheduled_Type')
                     done_tested_date = tr.get('Done_Tested_Date')
