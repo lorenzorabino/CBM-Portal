@@ -447,6 +447,59 @@ def notification():
                     entry['attachment_links'] = []
 
                 entries.append(entry)
+            # Also include CBM_Testing rows with Alarm_Level 'critical' or 'warning'
+            try:
+                tsel = text(
+                    "SELECT t.Testing_ID, t.Test_Type, t.planner_id, t.Alarm_Level, t.Notes, p.Department, p.Equipment, p.pm_date AS PM_Date, p.schedule_type AS Scheduled_Type, t.Done_Tested_Date "
+                    "FROM CBM_Testing t JOIN Planner p ON p.id = t.planner_id "
+                    "WHERE LOWER(TRIM(COALESCE(t.Alarm_Level,''))) IN ('critical','warning') ORDER BY t.Testing_ID DESC LIMIT :lim"
+                )
+                trows = conn.execute(tsel, {'lim': 1000}).mappings().fetchall()
+                for tr in trows:
+                    tid = tr.get('Testing_ID')
+                    test_type = tr.get('Test_Type')
+                    planner_id = tr.get('planner_id')
+                    alarm_level = tr.get('Alarm_Level')
+                    notes = tr.get('Notes')
+                    department = tr.get('Department')
+                    equipment = tr.get('Equipment')
+                    pm_date = tr.get('PM_Date')
+                    schedule_type = tr.get('Scheduled_Type')
+                    done_tested_date = tr.get('Done_Tested_Date')
+
+                    # Build notification text and entry structure
+                    notif_text = f"For SAP - Testing #{tid} ({test_type or ''})"
+                    tentry = dict(
+                        testing_id=tid,
+                        planner_id=planner_id,
+                        notification=notif_text,
+                        department=department,
+                        equipment=equipment,
+                        test_type=test_type,
+                        pm_date=pm_date,
+                        schedule_type=schedule_type,
+                        done_tested_date=done_tested_date,
+                        alarm_level=alarm_level,
+                        notes=notes,
+                        attachments=[],
+                        attachment_links=[],
+                    )
+                    # Attachments for the testing row
+                    try:
+                        arows = conn.execute(text("SELECT id, testing_id, filename FROM CBM_Testing_Attachments WHERE testing_id = :tid"), {"tid": tid}).fetchall()
+                        for a in arows:
+                            tentry['attachments'].append({'id': a[0], 'filename': a[2]})
+                            try:
+                                tentry['attachment_links'].append(url_for('technician.view_attachment', attachment_id=a[0]))
+                            except Exception:
+                                tentry['attachment_links'].append(None)
+                    except Exception:
+                        pass
+
+                    entries.append(tentry)
+            except Exception:
+                # ignore errors fetching testing alarms
+                pass
     except Exception as e:
         print('Error fetching notifications:', e)
     return render_template('notification.html', entries=entries, page_title='Notifications')
