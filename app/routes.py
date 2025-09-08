@@ -502,7 +502,137 @@ def notification():
                 pass
     except Exception as e:
         print('Error fetching notifications:', e)
-    return render_template('notification.html', entries=entries, page_title='Notifications')
+    # Also load Notification rows from the demo DB file (database/portal_demo3.db)
+    import os, sqlite3
+    portal_entries = []
+    try:
+        base = os.path.dirname(os.path.dirname(__file__))
+        demo_db = os.path.join(base, 'database', 'portal_demo3.db')
+        if os.path.exists(demo_db):
+            con = sqlite3.connect(demo_db)
+            con.row_factory = sqlite3.Row
+            try:
+                cur = con.cursor()
+                cur.execute(
+                    "SELECT rowid, Notification, Department, Equipment, Testing_Type, PM_Date, Scheduled_Type, Done_Tested_Date, Alarm_Level, Notes, Attachment FROM Notification ORDER BY rowid DESC LIMIT 1000"
+                )
+                rows = cur.fetchall()
+                for r in rows:
+                    notification_text = r['Notification'] if 'Notification' in r.keys() else None
+                    department = r['Department'] if 'Department' in r.keys() else None
+                    equipment = r['Equipment'] if 'Equipment' in r.keys() else None
+                    test_type = r['Testing_Type'] if 'Testing_Type' in r.keys() else None
+                    pm_date = r['PM_Date'] if 'PM_Date' in r.keys() else None
+                    schedule_type = r['Scheduled_Type'] if 'Scheduled_Type' in r.keys() else None
+                    done_tested_date = r['Done_Tested_Date'] if 'Done_Tested_Date' in r.keys() else None
+                    alarm_level = r['Alarm_Level'] if 'Alarm_Level' in r.keys() else None
+                    notes = r['Notes'] if 'Notes' in r.keys() else None
+                    attachment_val = r['Attachment'] if 'Attachment' in r.keys() else None
+
+                    entry = dict(
+                        testing_id=None,
+                        planner_id=None,
+                        notification=notification_text,
+                        department=department,
+                        equipment=equipment,
+                        test_type=test_type,
+                        pm_date=pm_date,
+                        schedule_type=schedule_type,
+                        done_tested_date=done_tested_date,
+                        alarm_level=alarm_level,
+                        notes=notes,
+                        attachments=[],
+                        attachment_links=[],
+                    )
+
+                    # Try to resolve Attachment similar to project DB behavior
+                    try:
+                        if attachment_val is not None:
+                            sval = str(attachment_val).strip()
+                            if sval.isdigit():
+                                # treat as attachment id in project DB
+                                with db.engine.begin() as conn2:
+                                    arow = conn2.execute(text("SELECT id, testing_id, filename FROM CBM_Testing_Attachments WHERE id = :id LIMIT 1"), {"id": int(sval)}).fetchone()
+                                    if arow:
+                                        entry['attachments'].append({'id': arow[0], 'filename': arow[2]})
+                                        try:
+                                            from flask import url_for
+                                            entry['attachment_links'].append(url_for('technician.view_attachment', attachment_id=arow[0]))
+                                        except Exception:
+                                            entry['attachment_links'].append(None)
+                            elif ',' in sval:
+                                parts = [p.strip() for p in sval.split(',') if p.strip()]
+                                for p in parts:
+                                    entry['attachments'].append({'id': None, 'filename': p})
+                            elif sval:
+                                entry['attachments'].append({'id': None, 'filename': sval})
+                    except Exception:
+                        pass
+
+                    portal_entries.append(entry)
+            finally:
+                try:
+                    con.close()
+                except Exception:
+                    pass
+    except Exception:
+        portal_entries = []
+
+    return render_template('notification.html', entries=entries, portal_entries=portal_entries, page_title='Notifications')
+
+
+@main.route('/api/notification/post', methods=['POST'])
+def api_notification_post():
+    """Persist a notification row into the project's portal_demo3.db Notification table.
+
+    Expects JSON with keys: notification (required), department, equipment, testing_id (optional),
+    testing_type, pm_date, scheduled_type, done_tested_date, alarm_level, notes, attachment
+    """
+    import os, sqlite3
+    data = request.get_json(silent=True) or {}
+    notification = (data.get('notification') or '').strip()
+    if not notification:
+        return jsonify({'ok': False, 'error': 'notification empty'}), 400
+
+    department = data.get('department')
+    equipment = data.get('equipment')
+    testing_type = data.get('testing_type')
+    pm_date = data.get('pm_date')
+    scheduled_type = data.get('scheduled_type')
+    done_tested_date = data.get('done_tested_date')
+    alarm_level = data.get('alarm_level')
+    notes = data.get('notes')
+    attachment = data.get('attachment')
+
+    # Build path to the demo DB file inside repository 'database' folder
+    base = os.path.dirname(os.path.dirname(__file__))
+    db_path = os.path.join(base, 'database', 'portal_demo3.db')
+    if not os.path.exists(db_path):
+        return jsonify({'ok': False, 'error': f'database not found: {db_path}'}), 500
+
+    try:
+        conn = sqlite3.connect(db_path)
+        cur = conn.cursor()
+        cur.execute(
+            """INSERT INTO Notification (Notification, Department, Equipment, Testing_Type, PM_Date, Scheduled_Type, Done_Tested_Date, Alarm_Level, Notes, Attachment)
+            VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            (notification, department, equipment, testing_type, pm_date, scheduled_type, done_tested_date, alarm_level, notes, attachment)
+        )
+        conn.commit()
+        rowid = cur.lastrowid
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return jsonify({'ok': False, 'error': str(e)}), 500
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+    return jsonify({'ok': True, 'rowid': rowid})
 
 
 @main.route('/api/dashboard/weekly_metrics')

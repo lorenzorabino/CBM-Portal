@@ -41,13 +41,16 @@
             {% set ns.count = ns.count + 1 %}
             <tr>
               <td style="white-space:normal; max-width:320px;">
-                {# Editable notification field: empty by default (no default value) #}
+                {# Editable notification field + Post button: empty by default (no default value) #}
+                <div class="notif-edit-row" style="display:flex; align-items:flex-start; gap:8px;">
                 {% set tid = e.testing_id %}
                 {% if tid %}
                   <div class="notification-edit" contenteditable="true" data-testing-id="{{ tid }}" aria-label="Edit notification"></div>
                 {% else %}
                   <div class="notification-edit" contenteditable="true" data-entry-idx="{{ ns.count }}" aria-label="Edit notification"></div>
                 {% endif %}
+                  <button type="button" class="notification-post-btn" title="Save notification">Post it!</button>
+                </div>
               </td>
               <td>{{ e.department or '' }}</td>
               <td>{{ e.equipment or '' }}</td>
@@ -78,7 +81,7 @@
     </table>
   </div>
 
-  {# With SAP Notifications table #}
+  {# With SAP Notifications table: prefer portal_entries (portal_demo3.db) when available #}
   <h3 style="margin-top:6px; margin-bottom:6px;">With SAP Notifications</h3>
   <div class="table-wrapper">
     <table class="table planner-table">
@@ -97,10 +100,9 @@
         </tr>
       </thead>
       <tbody>
-        {% set ns2 = namespace(count=0) %}
-        {% for e in entries %}
-          {% if 'with sap' in (e.notification or '')|lower %}
-            {% set ns2.count = ns2.count + 1 %}
+        {% if portal_entries is defined and portal_entries|length > 0 %}
+          {% set ns2 = namespace(count=portal_entries|length) %}
+          {% for e in portal_entries %}
             <tr>
               <td style="white-space:normal; max-width:320px;">{{ e.notification or '-' }}</td>
               <td>{{ e.department or '' }}</td>
@@ -123,10 +125,40 @@
                 {% endif %}
               </td>
             </tr>
+          {% endfor %}
+        {% else %}
+          {# fallback to existing behavior: filter entries by 'with sap' text #}
+          {% set ns2 = namespace(count=0) %}
+          {% for e in entries %}
+            {% if 'with sap' in (e.notification or '')|lower %}
+              {% set ns2.count = ns2.count + 1 %}
+              <tr>
+                <td style="white-space:normal; max-width:320px;">{{ e.notification or '-' }}</td>
+                <td>{{ e.department or '' }}</td>
+                <td>{{ e.equipment or '' }}</td>
+                <td>{{ e.test_type or '' }}</td>
+                <td class="text-center">{{ e.pm_date or '-' }}</td>
+                <td class="text-center">{{ e.schedule_type or '-' }}</td>
+                <td class="text-center">{{ e.done_tested_date or '-' }}</td>
+                <td class="text-center"><span class="badge {{ 'alarm-critical' if (e.alarm_level or '')|lower == 'critical' else ('alarm-warning' if (e.alarm_level or '')|lower == 'warning' else 'toast-info') }}">{{ e.alarm_level }}</span></td>
+                <td class="notes-cell" style="max-width:320px; white-space:normal;">{{ e.notes or '-' }}</td>
+                <td style="white-space:normal; max-width:320px;">
+                  {% if e.attachments and e.attachments|length > 0 %}
+                    <ul style="list-style:none; padding:0; margin:0;">
+                      {% for a in e.attachments %}
+                        <li style="display:inline-block; margin-right:8px;">{% if a.id %}<a href="{{ url_for('technician.view_attachment', attachment_id=a.id) }}" target="_blank">{{ a.filename }}</a>{% else %}{{ a.filename }}{% endif %}</li>
+                      {% endfor %}
+                    </ul>
+                  {% else %}
+                    -
+                  {% endif %}
+                </td>
+              </tr>
+            {% endif %}
+          {% endfor %}
+          {% if ns2.count == 0 %}
+            <tr><td colspan="10" class="no-entries">No "With SAP" notifications found.</td></tr>
           {% endif %}
-        {% endfor %}
-        {% if ns2.count == 0 %}
-          <tr><td colspan="10" class="no-entries">No "With SAP" notifications found.</td></tr>
         {% endif %}
       </tbody>
     </table>
@@ -139,13 +171,13 @@
     /* Editable notification textbox styling */
     .notification-edit {
       padding:6px 8px;
-      border:1px solid #e6e9ee;
+      border:1px solid #767676;
       border-radius:6px;
       min-height:36px;
       display:inline-block;
-      width:100%;
+      width:70%;
       box-sizing:border-box;
-      background: #fff;
+      background: #ffffff;
       color: #0f172a;
     }
     .notification-edit:focus {
@@ -154,6 +186,19 @@
       box-shadow: 0 0 0 4px rgba(96,165,250,0.12);
       background: #fffef8;
     }
+    /* Post button next to editable notification */
+    .notification-post-btn {
+      background: #757576;
+      color: rgb(255, 255, 255);
+      border: none;
+      padding: 6px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight:600;
+      box-shadow: 0 1px 0 rgba(0,0,0,0.04);
+    }
+    .notification-post-btn:hover { background:#1e40af; }
+    .notification-post-btn:active { transform: translateY(1px); }
     .alarm-critical { color:#520000; }
     .alarm-warning { color:#ff0000; }
     /* Make tables expand to available window width and be responsive */
@@ -206,10 +251,64 @@
       if(k){ const v = localStorage.getItem(k); if(v !== null) el.textContent = v; }
     }); }
     function saveEl(el){ const id = el.dataset.testingId; const idx = el.dataset.entryIdx; let k = id ? keyForId(id) : (idx ? keyForIdx(idx) : null); if(!k) return; const v = el.textContent.trim(); if(v.length===0) { localStorage.removeItem(k); } else { localStorage.setItem(k, v); } }
+    function saveSiblingPostBtn(btn){ const row = btn.closest('.notif-edit-row'); if(!row) return; const edit = row.querySelector('.notification-edit'); if(edit) saveEl(edit); }
+    async function postNotification(btn){
+      const row = btn.closest('tr');
+      if(!row) return {ok:false, error:'no-row'};
+      const edit = row.querySelector('.notification-edit');
+      const notif = edit ? edit.textContent.trim() : '';
+      if(!notif) return {ok:false, error:'empty'};
+      // collect visible fields from the row (department, equipment, test_type, pm_date, schedule_type, done_tested_date, alarm_level, notes)
+      const cells = row.querySelectorAll('td');
+      const payload = {
+        notification: notif,
+        department: (cells[1] && cells[1].textContent.trim()) || null,
+        equipment: (cells[2] && cells[2].textContent.trim()) || null,
+        testing_type: (cells[3] && cells[3].textContent.trim()) || null,
+        pm_date: (cells[4] && cells[4].textContent.trim()) || null,
+        scheduled_type: (cells[5] && cells[5].textContent.trim()) || null,
+        done_tested_date: (cells[6] && cells[6].textContent.trim()) || null,
+        alarm_level: (cells[7] && cells[7].textContent.trim()) || null,
+        notes: (cells[8] && cells[8].textContent.trim()) || null,
+        attachment: null
+      };
+
+      try{
+        const resp = await fetch('{{ url_for("main.api_notification_post") }}', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+        const j = await resp.json();
+        if(!j.ok) return {ok:false, error: j.error || 'server-failed'};
+
+        // Insert a row into the With SAP table body (table 2) to reflect persisted notification
+        const withTableBody = document.querySelectorAll('.table-wrapper')[1]?.querySelector('tbody');
+        if(withTableBody){
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td style="white-space:normal; max-width:320px;">${escapeHtml(notif)}</td>
+            <td>${escapeHtml(payload.department||'')}</td>
+            <td>${escapeHtml(payload.equipment||'')}</td>
+            <td>${escapeHtml(payload.testing_type||'')}</td>
+            <td class="text-center">${escapeHtml(payload.pm_date||'-')}</td>
+            <td class="text-center">${escapeHtml(payload.scheduled_type||'-')}</td>
+            <td class="text-center">${escapeHtml(payload.done_tested_date||'-')}</td>
+            <td class="text-center"><span class="badge">${escapeHtml(payload.alarm_level||'')}</span></td>
+            <td class="notes-cell" style="max-width:320px; white-space:normal;">${escapeHtml(payload.notes||'-')}</td>
+            <td style="white-space:normal; max-width:320px;">-</td>
+          `;
+          withTableBody.insertBefore(tr, withTableBody.firstChild);
+        }
+
+        return {ok:true, rowid:j.rowid};
+      }catch(err){
+        return {ok:false, error: String(err)};
+      }
+    }
+
+    function escapeHtml(s){ return String(s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"}[c]; }); }
     document.addEventListener('DOMContentLoaded', ()=>{
       loadAll();
       document.body.addEventListener('blur', (ev)=>{ if(ev.target && ev.target.classList && ev.target.classList.contains('notification-edit')){ saveEl(ev.target); } }, true);
       document.body.addEventListener('keydown', (ev)=>{ if(ev.key === 'Enter' && ev.target && ev.target.classList && ev.target.classList.contains('notification-edit')){ ev.preventDefault(); ev.target.blur(); } });
+  document.body.addEventListener('click', (ev)=>{ if(ev.target && ev.target.classList && ev.target.classList.contains('notification-post-btn')){ ev.preventDefault(); saveSiblingPostBtn(ev.target); ev.target.blur(); /* small visual feedback */ ev.target.classList.add('posted'); setTimeout(()=>ev.target.classList.remove('posted'),300); /* persist to server and add to With-SAP table */ postNotification(ev.target).then(resp=>{ if(!resp.ok){ console.warn('Post failed', resp.error); /* optionally show a user-visible error */ } else { /* success feedback */ ev.target.textContent = 'Posted'; setTimeout(()=>{ ev.target.textContent = 'Post it!'; },1200); } }); } });
     });
   })();
 </script>
