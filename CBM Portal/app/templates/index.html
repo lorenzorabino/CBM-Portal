@@ -154,7 +154,7 @@
                         <span class="kpi-chip chip-planned" data-label="Planned"><i class="kpi-dot"></i> Planned {{ k.planned_tests }}</span>
                         <span class="kpi-chip chip-unplanned" data-label="Unplanned"><i class="kpi-dot"></i> Unplanned {{ k.unplanned_tests }}</span>
                         <span class="kpi-chip chip-validation" data-label="Validation" style="display: {{ 'inline-flex' if (k.validation_tests or 0) > 0 else 'none' }};"><i class="kpi-dot"></i> Validation {{ k.validation_tests }}</span>
-                        <span class="kpi-chip chip-other" data-label="Other" style="display: {{ 'inline-flex' if (k.other_schedule_tests or 0) > 0 else 'none' }};"><i class="kpi-dot"></i> Other {{ k.other_schedule_tests }}</span>
+                        <span class="kpi-chip chip-other" data-label="Other" style="display: {{ 'inline-flex' if (k.other_schedule_tests|default(0, true)) > 0 else 'none' }};"><i class="kpi-dot"></i> Other {{ k.other_schedule_tests }}</span>
                     </div>
                 </div>
                 <div class="panel kpi-card kpi-completed js-kpi" data-kpi="completed" title="View details"><div class="card-title">Completed</div><div class="card-count">{{ k.completed }}</div></div>

@@ -464,7 +464,7 @@ def notification():
                 for r in conn.execute(sql).mappings().fetchall():
                     rows.append(dict(
                         testing_id=r.get('Testing_ID'),
-                        planner_id=r.get('planner_id'),
+                        clanner_id=r.get('planner_id'),
                         test_type=r.get('Test_Type'),
                         alarm_level=r.get('Alarm_Level'),
                         notes=r.get('Notes'),
@@ -1410,7 +1410,7 @@ def validation_results_alias():
     - If id is provided and numeric: redirect to /validation/<id>.
     - If no id: render a list page of validation results grouped by alarm level.
     """
-    from flask import redirect, url_for
+    from flask import redirect, url_for, flash
     id_str = (request.args.get('id') or '').strip()
     if id_str.isdigit():
         flash('Single validation view is not available. Showing list instead.', 'info')
@@ -1432,6 +1432,8 @@ def validation_results_alias():
     groups = { 'Critical': [], 'Warning': [], 'Normal': [], 'Unknown': [] }
     summary = { 'Critical': 0, 'Warning': 0, 'Normal': 0, 'Unknown': 0, 'Total': 0 }
     filters = dict(week=week, year=year, department=department, equipment=equipment, alarm=alarm, status=status, limit=max_rows, test_type=test_type_filter)
+    # Raw dump of Validations table (if available) to render a direct table in the template
+    validations_raw = []
     try:
         with db.engine.begin() as conn:
             # If a dedicated 'Validations' table exists in the SQLite DB, prefer it.
@@ -1442,6 +1444,20 @@ def validation_results_alias():
                 )
                 rows = conn.execute(sel, { 'lim': max_rows }).mappings().fetchall()
                 for r in rows:
+                    # Append to raw list for direct rendering
+                    validations_raw.append({
+                        'ID': r.get('ID'),
+                        'Notification': r.get('Notification'),
+                        'Week': r.get('Week'),
+                        'Year': r.get('Year'),
+                        'Department': r.get('Department'),
+                        'Equipment': r.get('Equipment'),
+                        'Type': r.get('Type'),
+                        'Schedule': r.get('Schedule'),
+                        'Status': r.get('Status'),
+                        'Alarm': r.get('Alarm'),
+                        'Done_Date': r.get('Done_Date'),
+                    })
                     alarm_val = (r.get('Alarm') or '').strip()
                     lvl = alarm_val.capitalize() if alarm_val else 'Unknown'
                     if lvl not in ('Critical','Warning','Normal'):
@@ -1704,6 +1720,7 @@ def validation_results_alias():
         validation_not_corrected_pct=v_not_pct,
         longest_warnings=longest_warnings,
         longest_validation_not_corrected=longest_validation_not_corrected,
+    validations_raw=validations_raw,
     )
 
 

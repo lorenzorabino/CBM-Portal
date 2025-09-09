@@ -257,6 +257,60 @@
     </script>
 
     
+  <!-- Raw Validations table direct from DB (if available) -->
+  {% if validations_raw is defined and validations_raw and validations_raw|length > 0 %}
+  <section class="panel full-span" style="margin-top:12px;">
+    <div class="panel-title">Validations — Raw Table <span class="badge" style="margin-left:8px;">{{ validations_raw|length }}</span></div>
+    <div class="double-scroll-wrapper">
+      <div class="double-scroll-top"><div style="width:1400px"></div></div>
+      <div class="double-scroll-content">
+        <table class="planner-table no-wrap">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Notification</th>
+              <th>Week</th>
+              <th>Year</th>
+              <th>Department</th>
+              <th>Equipment</th>
+              <th>Type</th>
+              <th>Schedule</th>
+              <th>Status</th>
+              <th>Alarm</th>
+              <th>Done Date</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in validations_raw %}
+            <tr>
+              <td>{{ r.ID }}</td>
+              <td style="min-width:260px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="{{ r.Notification }}">{{ r.Notification or '-' }}</td>
+              <td>{{ r.Week or '' }}</td>
+              <td>{{ r.Year or '' }}</td>
+              <td>{{ r.Department or '-' }}</td>
+              <td>{{ r.Equipment or '-' }}</td>
+              <td>{{ r.Type or '-' }}</td>
+              <td>{{ r.Schedule or '-' }}</td>
+              <td>{{ r.Status or '-' }}</td>
+              <td>
+                {% set alarm = (r.Alarm or '')|lower %}
+                {% if alarm=='critical' %}
+                  <span class="badge alarm-critical">Critical</span>
+                {% elif alarm=='warning' %}
+                  <span class="badge alarm-warning">Warning</span>
+                {% elif alarm=='normal' %}
+                  <span class="badge">Normal</span>
+                {% else %}-{% endif %}
+              </td>
+              <td>{{ (r.Done_Date or '')[:10] }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+  {% endif %}
 
   <!-- Longest not-corrected summaries removed -->
 
