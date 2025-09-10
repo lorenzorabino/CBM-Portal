@@ -892,3 +892,64 @@ function animateNumber(el, from, to, duration) {
     }
     requestAnimationFrame(step);
 }
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.body.addEventListener('click', async (e) => {
+    if (!e.target.classList.contains('notification-post-btn')) return;
+
+    const btn = e.target;
+    const row = btn.closest('tr');
+    if (!row) return;
+
+    // Prefer explicit testing id from the button or the row dataset
+    const testingId = btn.getAttribute('data-testing-id') || row.getAttribute('data-testing-id') || row.dataset.testingId;
+    if (!testingId) { alert('Failed to post notification: testing_id required'); return; }
+
+    // Collect notification value (prefer the new numeric input), then other cells
+    const notificationText = row.querySelector('.notif-input')?.value?.trim() || row.querySelector('.notification-edit')?.textContent.trim() || '';
+    const cells = row.querySelectorAll('td');
+        const payload = {
+            testing_id: Number(testingId),
+            notification: notificationText,
+      department: cells[1]?.textContent.trim() || '',
+      equipment: cells[2]?.textContent.trim() || '',
+      test_type: cells[3]?.textContent.trim() || '',
+      pm_date: cells[4]?.textContent.trim() || '',
+      schedule_type: cells[5]?.textContent.trim() || '',
+      done_tested_date: cells[6]?.textContent.trim() || '',
+      alarm_level: cells[7]?.textContent.trim() || '',
+      notes: cells[8]?.textContent.trim() || '',
+    };
+
+    try {
+      const res = await fetch('/api/notification/post', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+
+      if (data.ok) {
+                // Move row to "With SAP Notifications" table (sanitize cloned node so it is not editable)
+                const withSapTable = document.querySelectorAll('.table-wrapper')[1].querySelector('tbody');
+                const cloned = row.cloneNode(true);
+                // remove editable attributes and post buttons from the cloned row
+                cloned.querySelectorAll('.notification-edit').forEach(el=>{
+                    if(el.hasAttribute('contenteditable')) el.removeAttribute('contenteditable');
+                    el.setAttribute('aria-readonly','true');
+                    el.classList.add('notification-readonly');
+                });
+                cloned.querySelectorAll('.notification-post-btn').forEach(btn=>btn.remove());
+                withSapTable.appendChild(cloned);
+
+                // Optionally remove from "For SAP"
+                row.remove();
+      } else {
+        alert('Failed to post notification: ' + (data.error || 'Unknown error'));
+      }
+    } catch (err) {
+      console.error('Error posting notification:', err);
+      alert('Error posting notification');
+    }
+  });
+});

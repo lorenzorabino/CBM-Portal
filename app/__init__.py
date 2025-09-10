@@ -2,6 +2,7 @@ from flask import Flask
 from .models import db
 from .routes import main
 from .technician_routes import technician
+from .calendar_routes import calendar_bp
 import os
 
 def create_app():
@@ -51,5 +52,6 @@ def create_app():
     # Register blueprints
     app.register_blueprint(main)
     app.register_blueprint(technician)
+    app.register_blueprint(calendar_bp)
 
     return app

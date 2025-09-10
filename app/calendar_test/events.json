@@ -1,0 +1,4 @@
+[
+  { "title": "Test Event 1", "start": "2025-09-09", "color": "#ff0000" },
+  { "title": "Test Event 2", "start": "2025-09-10", "color": "#00ff00" }
+]

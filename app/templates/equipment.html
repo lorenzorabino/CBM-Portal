@@ -43,7 +43,8 @@
                         <div class="nav-group" aria-label="Main">
                             <a href="{{ url_for('main.index') }}" class="nav-item" title="Dashboard">
                                 <span class="nav-icon" aria-hidden="true">
-                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13h8V3H3z"></path><path d="M13 21h8V11h-8z"></path><path d="M13 3h8"></path><path d="M3 21h8v-6H3z"></path></svg>
+                                    <img src="{{ url_for('static', filename='icons/Dashboard.png') }}" class="icon-img default-icon">
+                                    <img src="{{ url_for('static', filename='icons/Dashboard.png') }}" class="icon-img active-icon">
                                 </span>
                                 <span class="nav-label">Dashboard</span>
                             </a>

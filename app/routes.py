@@ -1,6 +1,8 @@
 from flask import Blueprint, render_template, request, jsonify
 from sqlalchemy import text
 from .models import db, AlarmLevel, CBMTechnician, CBMTesting, Equipment
+import os
+from datetime import datetime
 
 main = Blueprint('main', __name__)
 
@@ -361,278 +363,328 @@ def index():
         recent_planners=recent_planners,
         recent_attachments=recent_attachments,
         board_rows=board_rows,
-    equipment_board=equipment_board,
-    sel_pm_date=sel_pm_date,
-    sel_pm_day=sel_pm_day,
-    pm_sel_week=pm_sel_week,
-    pm_sel_year=pm_sel_year,
+        equipment_board=equipment_board,
+        sel_pm_date=sel_pm_date,
+        sel_pm_day=sel_pm_day,
+        pm_sel_week=pm_sel_week,
+        pm_sel_year=pm_sel_year,
         # Removed warning_longest KPI card context
     )
 
 
+@main.route('/pm-calendar')
+def pm_calendar():
+    """PM Calendar page.
+    This embeds the Streamlit-based PM calendar if it's running,
+    or shows a friendly message with setup instructions.
+    """
+    return render_template('pm_calendar.html')
+
+
+@main.route('/api/pm-events')
+def api_pm_events():
+    """Return preventive maintenance schedule events as JSON.
+
+    Attempts to load from an external MSSQL database if connection string
+    environment variable MSSQL_PM_CONN_STR is set; otherwise returns an
+    empty list. Dates are returned in YYYY-MM-DD format. If a schedule was
+    rescheduled (resched_count > 0 and resched_date not null) that date is used.
+    """
+    conn_str = os.getenv('MSSQL_PM_CONN_STR')
+    events = []
+    if not conn_str:
+        return jsonify(events=events)
+    try:
+        from sqlalchemy import create_engine
+        engine = create_engine(conn_str)
+        with engine.begin() as conn:
+            # Load lookup names first (keep small in memory)
+            machine_map = {}
+            location_map = {}
+            try:
+                for mid, mname in conn.execute(text("SELECT id, name FROM machines")):
+                    machine_map[mid] = mname or f"Machine {mid}"
+            except Exception:
+                pass
+            try:
+                for lid, lname in conn.execute(text("SELECT id, name FROM locations")):
+                    location_map[lid] = lname or f"Location {lid}"
+            except Exception:
+                pass
+            # Load schedules
+            sched_sql = text(
+                """
+                SELECT id, machine_id, location_id, next_pm_date, resched_date, resched_count
+                FROM maintenance_schedule
+                ORDER BY COALESCE(resched_date, next_pm_date) ASC
+                LIMIT 5000
+                """
+            )
+            rows = conn.execute(sched_sql).fetchall()
+            for r in rows:
+                sid, machine_id, location_id, next_pm_date, resched_date, resched_count = r
+                # Determine title
+                if machine_id:
+                    title = machine_map.get(machine_id, f"Machine {machine_id}")
+                elif location_id:
+                    title = location_map.get(location_id, f"Location {location_id}")
+                else:
+                    title = f"Schedule {sid}"
+                # Choose date
+                dt_val = None
+                if resched_count and resched_date:
+                    dt_val = resched_date
+                else:
+                    dt_val = next_pm_date
+                try:
+                    if isinstance(dt_val, str):
+                        # attempt parse
+                        dt_parsed = datetime.fromisoformat(dt_val[:19])
+                    else:
+                        dt_parsed = dt_val
+                    date_str = dt_parsed.strftime('%Y-%m-%d') if dt_parsed else None
+                except Exception:
+                    date_str = None
+                if not date_str:
+                    continue
+                events.append({
+                    "id": sid,
+                    "title": title,
+                    "start": date_str,
+                    "end": date_str,
+                    # Simple color heuristic: group by first letter to deterministic palette
+                    "color": _color_for_title(title),
+                })
+    except Exception:
+        # Silently return what we have (likely empty) to keep UI responsive
+        pass
+    return jsonify(events=events)
+
+
+def _color_for_title(title: str) -> str:
+    """Deterministic pastel color generator based on title hash (not cryptographic)."""
+    import hashlib
+    h = hashlib.md5((title or '').encode('utf-8')).hexdigest()
+    # Take first 6 hex chars but soften saturation by mixing with white
+    r = int(h[0:2], 16)
+    g = int(h[2:4], 16)
+    b = int(h[4:6], 16)
+    # mix with white (230) for pastel style
+    mix = 230
+    r = (r + mix) // 2
+    g = (g + mix) // 2
+    b = (b + mix) // 2
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
 @main.route('/notification', methods=['GET'])
 def notification():
-    """Show all testing entries with Alarm_Level 'warning' or 'critical'"""
-    from app.models import db
-    from sqlalchemy import text
-    from flask import url_for
-    entries = []
-    try:
-        with db.engine.begin() as conn:
-            # Prefer Notification table; select columns exactly as requested
-            sel = text(
-                "SELECT Notification, Department, Equipment, Testing_Type, PM_Date, Scheduled_Type, Done_Tested_Date, Alarm_Level, Notes, Attachment FROM Notification ORDER BY rowid DESC LIMIT :lim"
-            )
-            rows = conn.execute(sel, { 'lim': 1000 }).mappings().fetchall()
-            for r in rows:
-                # Map DB columns to template fields
-                notification_text = r.get('Notification')
-                department = r.get('Department')
-                equipment = r.get('Equipment')
-                test_type = r.get('Testing_Type')
-                pm_date = r.get('PM_Date')
-                schedule_type = r.get('Scheduled_Type')
-                done_tested_date = r.get('Done_Tested_Date')
-                alarm_level = r.get('Alarm_Level')
-                notes = r.get('Notes')
-                attachment_val = r.get('Attachment')
+    """Notification management page.
 
-                entry = dict(
-                    testing_id=None,
-                    planner_id=None,
-                    notification=notification_text,
-                    department=department,
-                    equipment=equipment,
-                    test_type=test_type,
-                    pm_date=pm_date,
-                    schedule_type=schedule_type,
-                    done_tested_date=done_tested_date,
-                    alarm_level=alarm_level,
-                    notes=notes,
-                    attachments=[],
-                )
-
-                # Try to resolve Attachment: if numeric, look up Testing_Attachments by id; if comma-separated names, show them
-                try:
-                    if attachment_val is not None:
-                        sval = str(attachment_val).strip()
-                        if sval.isdigit():
-                            # treat as attachment id
-                            arow = conn.execute(text("SELECT id, testing_id, filename FROM CBM_Testing_Attachments WHERE id = :id LIMIT 1"), {"id": int(sval)}).fetchone()
-                            if arow:
-                                entry['attachments'].append({'id': arow[0], 'filename': arow[2]})
-                        elif ',' in sval:
-                            # multiple filenames
-                            parts = [p.strip() for p in sval.split(',') if p.strip()]
-                            for p in parts:
-                                entry['attachments'].append({'id': None, 'filename': p})
-                        elif sval:
-                            # single filename or text
-                            entry['attachments'].append({'id': None, 'filename': sval})
-                except Exception:
-                    # ignore attachment resolution errors
-                    pass
-
-                # For convenience keep a short 'notification' field used by template display in first column
-                # Also provide attachment_links when id present
-                if entry['attachments']:
-                    links = []
-                    for a in entry['attachments']:
-                        try:
-                            links.append(url_for('technician.view_attachment', attachment_id=a.get('id')))
-                        except Exception:
-                            links.append(None)
-                    entry['attachment_links'] = links
-                else:
-                    entry['attachment_links'] = []
-
-                entries.append(entry)
-            # Also include CBM_Testing rows with Alarm_Level 'critical' or 'warning'
-            try:
-                tsel = text(
-                    "SELECT t.Testing_ID, t.Test_Type, t.planner_id, t.Alarm_Level, t.Notes, p.department, p.equipment, p.pm_date AS PM_Date, p.schedule_type AS Scheduled_Type, t.Done_Tested_Date "
-                    "FROM CBM_Testing t JOIN Planner p ON p.id = t.planner_id "
-                    "WHERE LOWER(TRIM(COALESCE(t.Alarm_Level,''))) IN ('critical','warning') ORDER BY t.Testing_ID DESC LIMIT :lim"
-                )
-                trows = conn.execute(tsel, {'lim': 1000}).mappings().fetchall()
-                for tr in trows:
-                    tid = tr.get('Testing_ID')
-                    test_type = tr.get('Test_Type')
-                    planner_id = tr.get('planner_id')
-                    alarm_level = tr.get('Alarm_Level')
-                    notes = tr.get('Notes')
-                    department = tr.get('department')
-                    equipment = tr.get('equipment')
-                    pm_date = tr.get('PM_Date')
-                    schedule_type = tr.get('Scheduled_Type')
-                    done_tested_date = tr.get('Done_Tested_Date')
-
-                    # Build notification text and entry structure
-                    notif_text = f"For SAP - Testing #{tid} ({test_type or ''})"
-                    tentry = dict(
-                        testing_id=tid,
-                        planner_id=planner_id,
-                        notification=notif_text,
-                        department=department,
-                        equipment=equipment,
-                        test_type=test_type,
-                        pm_date=pm_date,
-                        schedule_type=schedule_type,
-                        done_tested_date=done_tested_date,
-                        alarm_level=alarm_level,
-                        notes=notes,
-                        attachments=[],
-                        attachment_links=[],
-                    )
-                    # Attachments for the testing row
-                    try:
-                        arows = conn.execute(text("SELECT id, testing_id, filename FROM CBM_Testing_Attachments WHERE testing_id = :tid"), {"tid": tid}).fetchall()
-                        for a in arows:
-                            tentry['attachments'].append({'id': a[0], 'filename': a[2]})
-                            try:
-                                tentry['attachment_links'].append(url_for('technician.view_attachment', attachment_id=a[0]))
-                            except Exception:
-                                tentry['attachment_links'].append(None)
-                    except Exception:
-                        pass
-
-                    entries.append(tentry)
-            except Exception:
-                # ignore errors fetching testing alarms
-                pass
-    except Exception as e:
-        print('Error fetching notifications:', e)
-    # Also load Notification rows from the demo DB file (database/portal_demo3.db)
+    NEW LOGIC (2025-09-08):
+    - Source rows from CBM_Testing (critical | warning) joined to Planner.
+    - We now use the Planner.notification column (integer user supplies) to
+      decide table placement instead of free-text Notification table rows.
+    - "For SAP Notifications" => Planner.notification IS NULL OR ''
+    - "With SAP Notifications" => Planner.notification IS NOT NULL AND <> ''
+    - Updates are written to portal_demo3.db (local demo DB) per requirement.
+    """
     import os, sqlite3
-    portal_entries = []
-    try:
-        base = os.path.dirname(os.path.dirname(__file__))
-        demo_db = os.path.join(base, 'database', 'portal_demo3.db')
-        if os.path.exists(demo_db):
+    from sqlalchemy import text
+
+    base_dir = os.path.dirname(os.path.dirname(__file__))
+    demo_db = os.path.join(base_dir, 'database', 'portal_demo3.db')
+
+    rows = []
+    # Attempt to query from portal_demo3.db first (preferred persistence target)
+    used_demo = False
+    if os.path.exists(demo_db):
+        try:
             con = sqlite3.connect(demo_db)
             con.row_factory = sqlite3.Row
+            cur = con.cursor()
+            # Ensure notification column exists (auto-migrate if missing)
             try:
-                cur = con.cursor()
-                cur.execute(
-                    "SELECT rowid, Notification, Department, Equipment, Testing_Type, PM_Date, Scheduled_Type, Done_Tested_Date, Alarm_Level, Notes, Attachment FROM Notification ORDER BY rowid DESC LIMIT 1000"
+                info = [r[1] for r in cur.execute('PRAGMA table_info(Planner)')]
+                if 'notification' not in info:
+                    cur.execute('ALTER TABLE Planner ADD COLUMN notification TEXT')
+                    con.commit()
+            except Exception:
+                pass
+
+            try:
+                q = (
+                    "SELECT t.Testing_ID, t.Test_Type, t.Alarm_Level, t.Notes, t.Done_Tested_Date, "
+                    "p.id AS planner_id, p.department, p.equipment, p.pm_date, p.week_number, p.year, p.schedule_type, p.notification "
+                    "FROM CBM_Testing t JOIN Planner p ON p.id = t.planner_id "
+                    "WHERE LOWER(TRIM(COALESCE(t.Alarm_Level,''))) IN ('critical','warning') "
+                    "ORDER BY t.Testing_ID DESC LIMIT 1000"
                 )
-                rows = cur.fetchall()
-                for r in rows:
-                    notification_text = r['Notification'] if 'Notification' in r.keys() else None
-                    department = r['Department'] if 'Department' in r.keys() else None
-                    equipment = r['Equipment'] if 'Equipment' in r.keys() else None
-                    test_type = r['Testing_Type'] if 'Testing_Type' in r.keys() else None
-                    pm_date = r['PM_Date'] if 'PM_Date' in r.keys() else None
-                    schedule_type = r['Scheduled_Type'] if 'Scheduled_Type' in r.keys() else None
-                    done_tested_date = r['Done_Tested_Date'] if 'Done_Tested_Date' in r.keys() else None
-                    alarm_level = r['Alarm_Level'] if 'Alarm_Level' in r.keys() else None
-                    notes = r['Notes'] if 'Notes' in r.keys() else None
-                    attachment_val = r['Attachment'] if 'Attachment' in r.keys() else None
-
-                    entry = dict(
-                        testing_id=None,
-                        planner_id=None,
-                        notification=notification_text,
-                        department=department,
-                        equipment=equipment,
-                        test_type=test_type,
-                        pm_date=pm_date,
-                        schedule_type=schedule_type,
-                        done_tested_date=done_tested_date,
-                        alarm_level=alarm_level,
-                        notes=notes,
-                        attachments=[],
-                        attachment_links=[],
-                    )
-
-                    # Try to resolve Attachment similar to project DB behavior
-                    try:
-                        if attachment_val is not None:
-                            sval = str(attachment_val).strip()
-                            if sval.isdigit():
-                                # treat as attachment id in project DB
-                                with db.engine.begin() as conn2:
-                                    arow = conn2.execute(text("SELECT id, testing_id, filename FROM CBM_Testing_Attachments WHERE id = :id LIMIT 1"), {"id": int(sval)}).fetchone()
-                                    if arow:
-                                        entry['attachments'].append({'id': arow[0], 'filename': arow[2]})
-                                        try:
-                                            from flask import url_for
-                                            entry['attachment_links'].append(url_for('technician.view_attachment', attachment_id=arow[0]))
-                                        except Exception:
-                                            entry['attachment_links'].append(None)
-                            elif ',' in sval:
-                                parts = [p.strip() for p in sval.split(',') if p.strip()]
-                                for p in parts:
-                                    entry['attachments'].append({'id': None, 'filename': p})
-                            elif sval:
-                                entry['attachments'].append({'id': None, 'filename': sval})
-                    except Exception:
-                        pass
-
-                    portal_entries.append(entry)
+                for r in cur.execute(q):
+                    rows.append(dict(
+                        testing_id=r['Testing_ID'],
+                        planner_id=r['planner_id'],
+                        test_type=r['Test_Type'],
+                        alarm_level=r['Alarm_Level'],
+                        notes=r['Notes'],
+                        done_tested_date=r['Done_Tested_Date'],
+                        department=r['department'],
+                        equipment=r['equipment'],
+                        pm_date=r['pm_date'],
+                        week_number=(r['week_number'] if 'week_number' in r.keys() else None),
+                        year=(r['year'] if 'year' in r.keys() else None),
+                        schedule_type=r['schedule_type'],
+                        notification=(r['notification'] if 'notification' in r.keys() else None)
+                    ))
+                used_demo = True
             finally:
                 try:
                     con.close()
                 except Exception:
                     pass
-    except Exception:
-        portal_entries = []
+        except Exception:
+            rows = []
 
-    return render_template('notification.html', entries=entries, portal_entries=portal_entries, page_title='Notifications')
+    # Fallback: use main DB engine if demo DB absent or failed
+    if not used_demo:
+        try:
+            with db.engine.begin() as conn:
+                # Try to include p.notification if exists
+                base_sql = (
+                    "SELECT t.Testing_ID, t.Test_Type, t.Alarm_Level, t.Notes, t.Done_Tested_Date, "
+                    "p.id AS planner_id, p.department, p.equipment, p.pm_date, p.week_number, p.year, p.schedule_type"
+                )
+                extra_col = ''
+                try:
+                    # quick probe
+                    conn.execute(text("SELECT p.notification FROM Planner p LIMIT 1"))
+                    extra_col = ', p.notification'
+                except Exception:
+                    extra_col = ''
+
+                sql = text(
+                    base_sql + extra_col +
+                    " FROM CBM_Testing t JOIN Planner p ON p.id = t.planner_id "
+                    "WHERE LOWER(TRIM(COALESCE(t.Alarm_Level,''))) IN ('critical','warning') "
+                    "ORDER BY t.Testing_ID DESC LIMIT 1000"
+                )
+                for r in conn.execute(sql).mappings().fetchall():
+                    rows.append(dict(
+                        testing_id=r.get('Testing_ID'),
+                        planner_id=r.get('planner_id'),
+                        test_type=r.get('Test_Type'),
+                        alarm_level=r.get('Alarm_Level'),
+                        notes=r.get('Notes'),
+                        done_tested_date=r.get('Done_Tested_Date'),
+                        department=r.get('department'),
+                        equipment=r.get('equipment'),
+                        pm_date=r.get('pm_date'),
+                        week_number=r.get('week_number') if 'week_number' in r else None,
+                        year=r.get('year') if 'year' in r else None,
+                        schedule_type=r.get('schedule_type'),
+                        notification=r.get('notification') if 'notification' in r else None
+                    ))
+        except Exception:
+            rows = []
+
+    for_sap_rows = []
+    with_sap_rows = []
+    # Attach attachments (single batched query against main DB) for all testing_ids
+    try:
+        testing_ids = [r['testing_id'] for r in rows if r.get('testing_id')]
+        if testing_ids:
+            # Deduplicate
+            uniq_ids = list({tid for tid in testing_ids})
+            # Chunk to avoid SQLite variable limits (usually 999)
+            attachments_map = { }
+            CHUNK = 400
+            from math import ceil
+            with db.engine.begin() as conn:
+                for i in range(0, len(uniq_ids), CHUNK):
+                    subset = uniq_ids[i:i+CHUNK]
+                    # Build dynamic IN
+                    placeholders = ','.join([f":id{i}_{j}" for j,_ in enumerate(subset)])
+                    params = { f"id{i}_{j}": subset[j] for j in range(len(subset)) }
+                    sql_att = text(f"SELECT id, testing_id, filename FROM CBM_Testing_Attachments WHERE testing_id IN ({placeholders})")
+                    for aid, at_tid, fname in conn.execute(sql_att, params):
+                        attachments_map.setdefault(at_tid, []).append({ 'id': aid, 'filename': fname })
+            # Assign to rows
+            for r in rows:
+                tid = r.get('testing_id')
+                r['attachments'] = attachments_map.get(tid, [])
+        else:
+            for r in rows:
+                r['attachments'] = []
+    except Exception:
+        for r in rows:
+            r['attachments'] = []
+    for r in rows:
+        notif_val = ('' if r.get('notification') is None else str(r.get('notification')).strip())
+        if notif_val == '':
+            for_sap_rows.append(r)
+        else:
+            with_sap_rows.append(r)
+
+    return render_template('notification.html', for_sap_rows=for_sap_rows, with_sap_rows=with_sap_rows, page_title='Notifications')
+
 
 
 @main.route('/api/notification/post', methods=['POST'])
 def api_notification_post():
-    """Persist a notification row into the project's portal_demo3.db Notification table.
+    """Update Planner.notification (integer) for a given testing_id.
 
-    Expects JSON with keys: notification (required), department, equipment, testing_id (optional),
-    testing_type, pm_date, scheduled_type, done_tested_date, alarm_level, notes, attachment
+    Request JSON: { testing_id: int, notification: int }
+    - Writes to portal_demo3.db Planner.notification (auto adds column if missing).
+    - Resolves planner via CBM_Testing.planner_id.
     """
     import os, sqlite3
     data = request.get_json(silent=True) or {}
-    notification = (data.get('notification') or '').strip()
-    if not notification:
-        return jsonify({'ok': False, 'error': 'notification empty'}), 400
+    notif_raw = data.get('notification')
+    testing_id = data.get('testing_id')
+    if testing_id is None:
+        return jsonify(ok=False, error='testing_id required'), 400
+    # Accept strings but enforce integer-only
+    try:
+        notification_val = int(str(notif_raw).strip())
+    except Exception:
+        return jsonify(ok=False, error='notification must be integer'), 400
 
-    department = data.get('department')
-    equipment = data.get('equipment')
-    testing_type = data.get('testing_type')
-    pm_date = data.get('pm_date')
-    scheduled_type = data.get('scheduled_type')
-    done_tested_date = data.get('done_tested_date')
-    alarm_level = data.get('alarm_level')
-    notes = data.get('notes')
-    attachment = data.get('attachment')
-
-    # Build path to the demo DB file inside repository 'database' folder
     base = os.path.dirname(os.path.dirname(__file__))
     db_path = os.path.join(base, 'database', 'portal_demo3.db')
     if not os.path.exists(db_path):
-        return jsonify({'ok': False, 'error': f'database not found: {db_path}'}), 500
+        return jsonify(ok=False, error='portal_demo3.db not found'), 500
 
     try:
         conn = sqlite3.connect(db_path)
         cur = conn.cursor()
-        cur.execute(
-            """INSERT INTO Notification (Notification, Department, Equipment, Testing_Type, PM_Date, Scheduled_Type, Done_Tested_Date, Alarm_Level, Notes, Attachment)
-            VALUES (?,?,?,?,?,?,?,?,?,?)""",
-            (notification, department, equipment, testing_type, pm_date, scheduled_type, done_tested_date, alarm_level, notes, attachment)
-        )
+        # Ensure column exists
+        try:
+            cols = [r[1] for r in cur.execute('PRAGMA table_info(Planner)')]
+            if 'notification' not in cols:
+                cur.execute('ALTER TABLE Planner ADD COLUMN notification TEXT')
+        except Exception:
+            pass
+        # Find planner id
+        cur.execute('SELECT planner_id FROM CBM_Testing WHERE Testing_ID = ? LIMIT 1', (testing_id,))
+        row = cur.fetchone()
+        if not row:
+            return jsonify(ok=False, error='testing_id not found'), 404
+        planner_id = row[0]
+        cur.execute('UPDATE Planner SET notification = ? WHERE id = ?', (str(notification_val), planner_id))
+        if cur.rowcount == 0:
+            return jsonify(ok=False, error='planner not found'), 404
         conn.commit()
-        rowid = cur.lastrowid
+        return jsonify(ok=True, planner_id=planner_id, notification=notification_val)
     except Exception as e:
         try:
             conn.rollback()
         except Exception:
             pass
-        return jsonify({'ok': False, 'error': str(e)}), 500
+        return jsonify(ok=False, error=str(e)), 500
     finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
+        try: conn.close()
+        except Exception: pass
 
-    return jsonify({'ok': True, 'rowid': rowid})
 
 
 @main.route('/api/dashboard/weekly_metrics')

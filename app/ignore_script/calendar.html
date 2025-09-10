@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>PM Calendar</title>
+
+  <!-- Local FullCalendar CSS -->
+  <link href="main.min.css" rel="stylesheet">
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+    }
+    #calendar {
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+  </style>
+</head>
+<body>
+  <h2>Preventive Maintenance Calendar</h2>
+  <div id="calendar"></div>
+
+  <!-- Local FullCalendar JS -->
+  <script src="main.min.js"></script>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      var calendarEl = document.getElementById('calendar');
+
+      var calendar = new FullCalendar.Calendar(calendarEl, {
+        initialView: 'dayGridMonth',
+        events: 'http://172.31.3.40:8502/api/calendar', // ✅ Your FastAPI API endpoint
+        eventDidMount: function(info) {
+          if (info.event.extendedProps.color) {
+            info.el.style.backgroundColor = info.event.extendedProps.color;
+          }
+        },
+        headerToolbar: {
+          left: 'prev,next today',
+          center: 'title',
+          right: 'dayGridMonth,timeGridWeek,timeGridDay'
+        }
+      });
+
+      calendar.render();
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>PM Calendar</title>
+
+  <!-- ============================= -->
+  <!-- VERSION A: Use CDN (Internet) -->
+  <!-- ============================= -->
+  <!-- Uncomment these two lines if your server has internet -->
+  <!--
+  <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/main.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/main.min.js"></script>
+  -->
+
+  <!-- ============================= -->
+  <!-- VERSION B: Use Local (Offline) -->
+  <!-- ============================= -->
+  <!-- Place main.min.css and main.min.js in the SAME folder as this file -->
+  <link href="index.global.min.css" rel="stylesheet">
+  <script src="index.global.min.js"></script>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+    }
+    #calendar {
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+  </style>
+</head>
+<body>
+  <h2>Preventive Maintenance Calendar</h2>
+  <div id="calendar"></div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      var calendarEl = document.getElementById('calendar');
+      console.log("📌 Initializing calendar...");
+
+      var calendar = new FullCalendar.Calendar(calendarEl, {
+        initialView: 'dayGridMonth',
+
+        // ==============================
+        // 1) For testing, load dummy events
+        // ==============================
+        // events: [
+        //   { title: 'Test Event 1', start: '2025-09-09', color: '#ff0000' },
+        //   { title: 'Test Event 2', start: '2025-09-10', color: '#00ff00' }
+        // ],
+
+        // ==============================
+        // 2) For live data, use your API
+        // ==============================
+        events: 'http://172.31.3.40:8502/api/calendar',
+
+        eventDidMount: function(info) {
+          // Apply custom colors from API
+          if (info.event.extendedProps.color) {
+            info.el.style.backgroundColor = info.event.extendedProps.color;
+          }
+        },
+        headerToolbar: {
+          left: 'prev,next today',
+          center: 'title',
+          right: 'dayGridMonth,timeGridWeek,timeGridDay'
+        }
+      });
+
+      calendar.render();
+      console.log("✅ Calendar rendered");
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>PM Calendar</title>
+  <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js"></script>
+  <style>
+    #calendar {
+      max-width: 1100px;
+      margin: 40px auto;
+    }
+  </style>
+</head>
+<body>
+  <h2 style="text-align:center;">Preventive Maintenance Calendar</h2>
+  <div id="calendar"></div>
+
+    <script>
+    document.addEventListener("DOMContentLoaded", function() {
+        var calendarEl = document.getElementById("calendar");
+        var calendar = new FullCalendar.Calendar(calendarEl, {
+        initialView: "dayGridMonth",
+        firstDay: 1,   //Make Monday the first day of the week
+        events: "/calendar/events"
+        });
+        calendar.render();
+    });
+    </script>
+
+</body>
+</html>

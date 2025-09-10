@@ -1109,3 +1109,27 @@ table tbody tr:last-child td,
     inset: -6% -6% auto auto !important;
     filter: blur(6px) !important;
 }
+
+/* Default: show only default icon */
+.nav-item .default-icon {
+    display: inline;
+}
+.nav-item .active-icon {
+    display: none;
+}
+
+/* Active nav item: hide default, show active */
+.nav-item.is-active .default-icon {
+    display: none;
+}
+.nav-item.is-active .active-icon {
+    display: inline;
+    filter: brightness(0) invert(1); /* turn white */
+}
+
+/* Set size for all icons */
+.icon-img {
+    width: 30px;
+    height: 30px;
+    object-fit: contain;
+}

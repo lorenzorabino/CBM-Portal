@@ -1,314 +1,177 @@
-<head>
-    <meta charset="utf-8" />
-    <title>CBM • SAP Notifications</title>
-    <meta name="description" content="CBM Portal Notifications" />
-</head>
-{#
-  Notification view: show two tables
-  - "For SAP Notifications" (entries whose notification contains "for sap")
-  - "With SAP Notifications" (entries whose notification contains "with sap")
-
-  Assumption: entries are split by matching the text in the `notification` field (case-insensitive).
-#}
 {% extends 'technician/_planner_base.html' %}
 {% block planner_content %}
-  <div style="margin-bottom:10px; display:flex; align-items:center; justify-content:flex-start; gap:12px;">
-    <h2 style="margin:0;">SAP Notifications</h2>
-  </div>
+<div style="margin-bottom:10px; display:flex; align-items:center; gap:12px;">
+  <h2 style="margin:0;">CBM • SAP Notifications</h2>
+</div>
 
-  {# For SAP Notifications table #}
-  <h3 style="margin-top:12px; margin-bottom:6px;">For SAP Notifications</h3>
-  <div class="table-wrapper">
-    <table class="table planner-table">
-      <thead>
-        <tr>
-          <th style="min-width:320px;">Notification</th>
-          <th>Department</th>
-          <th>Equipment</th>
-          <th>Testing Type</th>
-          <th>PM Date</th>
-          <th>Scheduled type</th>
-          <th>Done Tested Date</th>
-          <th>Alarm Level</th>
-          <th>Notes</th>
-          <th>Attachment</th>
+<h3 style="margin-top:12px; margin-bottom:6px;">For SAP Notifications</h3>
+<div class="table-wrapper">
+  <table class="table planner-table">
+    <thead>
+      <tr>
+        <th style="min-width:140px;">SAP Notification</th>
+        <th>Department</th>
+        <th style="min-width:auto;">Week</th>
+        <th>Equipment</th>
+        <th>Testing Type</th>
+        <th>PM Date</th>
+        <th>Scheduled type</th>
+        <th>Done Tested Date</th>
+        <th>Alarm Level</th>
+        <th style="min-width: auto; max-width: 320px;">Notes</th>
+        <th>Attachment</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if for_sap_rows %}
+        {% for r in for_sap_rows %}
+        <tr data-testing-id="{{ r.testing_id }}">
+          <td>
+            <div style="display:flex; gap:6px; align-items:center;">
+              <input type="number" class="notif-input" min="0" step="1" inputmode="numeric" pattern="\d*" />
+              <button type="button" class="notification-post-btn" data-testing-id="{{ r.testing_id }}">Post!</button>
+            </div>
+          </td>
+          <td>{{ r.department or '' }}</td>
+          <td class="text-center">{{ "%02d"|format(r.week_number) if r.week_number else "-" }}</td>
+          <td>{{ r.equipment or '' }}</td>
+          <td>{{ r.test_type or '' }}</td>
+          <td class="text-center">{{ r.pm_date or '-' }}</td>
+          <td class="text-center">{{ r.schedule_type or '-' }}</td>
+          <td class="text-center">{{ r.done_tested_date or '-' }}</td>
+          <td class="text-center"><span class="badge {{ 'alarm-critical' if (r.alarm_level or '')|lower == 'critical' else ('alarm-warning' if (r.alarm_level or '')|lower == 'warning' else 'toast-info') }}">{{ r.alarm_level }}</span></td>
+          <td><div class="notes-cell">{{ r.notes or '-' }}</div></td> 
+          <td>
+            {% if r.attachments %}
+              <ul style="list-style:none; padding:0; margin:0;">
+                {% for a in r.attachments %}
+                  <li style="display:inline-block; margin-right:6px;max-width: 300px;overflow-wrap: break-word;word-break: break-word;">
+                    {% if a.id %}<a href="{{ url_for('technician.view_attachment', attachment_id=a.id) }}" target="_blank">{{ a.filename }}</a>{% else %}{{ a.filename }}{% endif %}
+                  </li>
+                {% endfor %}
+              </ul>
+            {% else %}-{% endif %}
+          </td>
         </tr>
-      </thead>
-      <tbody>
-        {% set ns = namespace(count=0) %}
-        {% for e in entries %}
-          {% if 'for sap' in (e.notification or '')|lower %}
-            {% set ns.count = ns.count + 1 %}
-            <tr>
-              <td style="white-space:normal; max-width:320px;">
-                {# Editable notification field + Post button: empty by default (no default value) #}
-                <div class="notif-edit-row" style="display:flex; align-items:flex-start; gap:8px;">
-                {% set tid = e.testing_id %}
-                {% if tid %}
-                  <div class="notification-edit" contenteditable="true" data-testing-id="{{ tid }}" aria-label="Edit notification"></div>
-                {% else %}
-                  <div class="notification-edit" contenteditable="true" data-entry-idx="{{ ns.count }}" aria-label="Edit notification"></div>
-                {% endif %}
-                  <button type="button" class="notification-post-btn" title="Save notification">Post it!</button>
-                </div>
-              </td>
-              <td>{{ e.department or '' }}</td>
-              <td>{{ e.equipment or '' }}</td>
-              <td>{{ e.test_type or '' }}</td>
-              <td class="text-center">{{ e.pm_date or '-' }}</td>
-              <td class="text-center">{{ e.schedule_type or '-' }}</td>
-              <td class="text-center">{{ e.done_tested_date or '-' }}</td>
-              <td class="text-center"><span class="badge {{ 'alarm-critical' if (e.alarm_level or '')|lower == 'critical' else ('alarm-warning' if (e.alarm_level or '')|lower == 'warning' else 'toast-info') }}">{{ e.alarm_level }}</span></td>
-              <td class="notes-cell" style="max-width:320px; white-space:normal;">{{ e.notes or '-' }}</td>
-              <td style="white-space:normal; max-width:320px;">
-                {% if e.attachments and e.attachments|length > 0 %}
-                  <ul style="list-style:none; padding:0; margin:0;">
-                    {% for a in e.attachments %}
-                      <li style="display:inline-block; margin-right:8px;">{% if a.id %}<a href="{{ url_for('technician.view_attachment', attachment_id=a.id) }}" target="_blank">{{ a.filename }}</a>{% else %}{{ a.filename }}{% endif %}</li>
-                    {% endfor %}
-                  </ul>
-                {% else %}
-                  -
-                {% endif %}
-              </td>
-            </tr>
-          {% endif %}
         {% endfor %}
-        {% if ns.count == 0 %}
-          <tr><td colspan="10" class="no-entries">No "For SAP" notifications found.</td></tr>
-        {% endif %}
-      </tbody>
-    </table>
-  </div>
+      {% else %}
+        <tr><td colspan="11" class="no-entries">No rows awaiting SAP notification.</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
 
-  {# With SAP Notifications table: prefer portal_entries (portal_demo3.db) when available #}
-  <h3 style="margin-top:6px; margin-bottom:6px;">With SAP Notifications</h3>
-  <div class="table-wrapper">
-    <table class="table planner-table">
-      <thead>
-        <tr>
-          <th style="min-width:320px;">Notification</th>
-          <th>Department</th>
-          <th>Equipment</th>
-          <th>Testing Type</th>
-          <th>PM Date</th>
-          <th>Scheduled type</th>
-          <th>Done Tested Date</th>
-          <th>Alarm Level</th>
-          <th>Notes</th>
-          <th>Attachment</th>
+<h3 style="margin-top:6px; margin-bottom:6px;">With SAP Notifications</h3>
+<div class="table-wrapper">
+  <table class="table planner-table with-sap-readonly">
+    <thead>
+      <tr>
+        <th style="min-width:100px;">Notification #</th>
+        <th>Department</th>
+        <th style="min-width:auto;">Week</th>
+        <th>Equipment</th>
+        <th>Testing Type</th>
+        <th>PM Date</th>
+        <th>Scheduled type</th>
+        <th>Done Tested Date</th>
+        <th>Alarm Level</th>
+        <th style="min-width: auto; max-width: 320px;">Notes</th>
+        <th>Attachment</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if with_sap_rows %}
+        {% for r in with_sap_rows %}
+        <tr data-testing-id="{{ r.testing_id }}">
+          <td>{{ r.notification }}</td>
+          <td>{{ r.department or '' }}</td>
+          <td class="text-center">{{ "%02d"|format(r.week_number) if r.week_number else "-" }}</td>
+          <td>{{ r.equipment or '' }}</td>
+          <td>{{ r.test_type or '' }}</td>
+          <td class="text-center">{{ r.pm_date or '-' }}</td>
+          <td class="text-center">{{ r.schedule_type or '-' }}</td>
+          <td class="text-center">{{ r.done_tested_date or '-' }}</td>
+          <td class="text-center"><span class="badge {{ 'alarm-critical' if (r.alarm_level or '')|lower == 'critical' else ('alarm-warning' if (r.alarm_level or '')|lower == 'warning' else 'toast-info') }}">{{ r.alarm_level }}</span></td>
+          <td><div class="notes-cell">{{ r.notes or '-' }}</div></td>
+          <td>
+            {% if r.attachments %}
+              <ul style="list-style:none; padding:0; margin:0;">
+                {% for a in r.attachments %}
+                  <li style="display:inline-block; margin-right:6px;max-width: 300px;overflow-wrap: break-word;word-break: break-word;">
+                    {% if a.id %}<a href="{{ url_for('technician.view_attachment', attachment_id=a.id) }}" target="_blank">{{ a.filename }}</a>{% else %}{{ a.filename }}{% endif %}
+                  </li>
+                {% endfor %}
+              </ul>
+            {% else %}-{% endif %}
+          </td>
         </tr>
-      </thead>
-      <tbody>
-        {% if portal_entries is defined and portal_entries|length > 0 %}
-          {% set ns2 = namespace(count=portal_entries|length) %}
-          {% for e in portal_entries %}
-            <tr>
-              <td style="white-space:normal; max-width:320px;">{{ e.notification or '-' }}</td>
-              <td>{{ e.department or '' }}</td>
-              <td>{{ e.equipment or '' }}</td>
-              <td>{{ e.test_type or '' }}</td>
-              <td class="text-center">{{ e.pm_date or '-' }}</td>
-              <td class="text-center">{{ e.schedule_type or '-' }}</td>
-              <td class="text-center">{{ e.done_tested_date or '-' }}</td>
-              <td class="text-center"><span class="badge {{ 'alarm-critical' if (e.alarm_level or '')|lower == 'critical' else ('alarm-warning' if (e.alarm_level or '')|lower == 'warning' else 'toast-info') }}">{{ e.alarm_level }}</span></td>
-              <td class="notes-cell" style="max-width:320px; white-space:normal;">{{ e.notes or '-' }}</td>
-              <td style="white-space:normal; max-width:320px;">
-                {% if e.attachments and e.attachments|length > 0 %}
-                  <ul style="list-style:none; padding:0; margin:0;">
-                    {% for a in e.attachments %}
-                      <li style="display:inline-block; margin-right:8px;">{% if a.id %}<a href="{{ url_for('technician.view_attachment', attachment_id=a.id) }}" target="_blank">{{ a.filename }}</a>{% else %}{{ a.filename }}{% endif %}</li>
-                    {% endfor %}
-                  </ul>
-                {% else %}
-                  -
-                {% endif %}
-              </td>
-            </tr>
-          {% endfor %}
-        {% else %}
-          {# fallback to existing behavior: filter entries by 'with sap' text #}
-          {% set ns2 = namespace(count=0) %}
-          {% for e in entries %}
-            {% if 'with sap' in (e.notification or '')|lower %}
-              {% set ns2.count = ns2.count + 1 %}
-              <tr>
-                <td style="white-space:normal; max-width:320px;">{{ e.notification or '-' }}</td>
-                <td>{{ e.department or '' }}</td>
-                <td>{{ e.equipment or '' }}</td>
-                <td>{{ e.test_type or '' }}</td>
-                <td class="text-center">{{ e.pm_date or '-' }}</td>
-                <td class="text-center">{{ e.schedule_type or '-' }}</td>
-                <td class="text-center">{{ e.done_tested_date or '-' }}</td>
-                <td class="text-center"><span class="badge {{ 'alarm-critical' if (e.alarm_level or '')|lower == 'critical' else ('alarm-warning' if (e.alarm_level or '')|lower == 'warning' else 'toast-info') }}">{{ e.alarm_level }}</span></td>
-                <td class="notes-cell" style="max-width:320px; white-space:normal;">{{ e.notes or '-' }}</td>
-                <td style="white-space:normal; max-width:320px;">
-                  {% if e.attachments and e.attachments|length > 0 %}
-                    <ul style="list-style:none; padding:0; margin:0;">
-                      {% for a in e.attachments %}
-                        <li style="display:inline-block; margin-right:8px;">{% if a.id %}<a href="{{ url_for('technician.view_attachment', attachment_id=a.id) }}" target="_blank">{{ a.filename }}</a>{% else %}{{ a.filename }}{% endif %}</li>
-                      {% endfor %}
-                    </ul>
-                  {% else %}
-                    -
-                  {% endif %}
-                </td>
-              </tr>
-            {% endif %}
-          {% endfor %}
-          {% if ns2.count == 0 %}
-            <tr><td colspan="10" class="no-entries">No "With SAP" notifications found.</td></tr>
-          {% endif %}
-        {% endif %}
-      </tbody>
-    </table>
-  </div>
+        {% endfor %}
+      {% else %}
+        <tr><td colspan="11" class="no-entries">No rows with SAP notification.</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
 
-  <style>
-    /* Notes cell: allow wrapping and breaking long words */
-    td.notes-cell { white-space:normal !important; overflow-wrap:break-word; word-wrap:break-word; word-break:break-word; max-width:320px; }
-    .badge { padding:4px 8px; border-radius:4px; }
-    /* Editable notification textbox styling */
-    .notification-edit {
-      padding:6px 8px;
-      border:1px solid #767676;
-      border-radius:6px;
-      min-height:36px;
-      display:inline-block;
-      width:70%;
-      box-sizing:border-box;
-      background: #ffffff;
-      color: #0f172a;
-    }
-    .notification-edit:focus {
-      outline: none;
-      border-color: #60a5fa;
-      box-shadow: 0 0 0 4px rgba(96,165,250,0.12);
-      background: #fffef8;
-    }
-    /* Post button next to editable notification */
-    .notification-post-btn {
-      background: #757576;
-      color: rgb(255, 255, 255);
-      border: none;
-      padding: 6px 10px;
-      border-radius: 6px;
-      cursor: pointer;
-      font-weight:600;
-      box-shadow: 0 1px 0 rgba(0,0,0,0.04);
-    }
-    .notification-post-btn:hover { background:#1e40af; }
-    .notification-post-btn:active { transform: translateY(1px); }
-    .alarm-critical { color:#520000; }
-    .alarm-warning { color:#ff0000; }
-    /* Make tables expand to available window width and be responsive */
-    .table-wrapper { width: 100%; overflow-x: auto; }
-    .planner-table { width: 100%; min-width: 900px; border-collapse: collapse; }
-    .planner-table th, .planner-table td { padding: 8px 10px; border-bottom: 1px solid #eef2f7; vertical-align: top; }
-    @media (max-width: 900px) {
-      .planner-table { min-width: 700px; }
-      .planner-table th, .planner-table td { padding: 6px 8px; }
-    }
-    /* Variables describing layout offsets used to precisely size the table */
-    :root {
-      --planner-sidebar-offset: 300px; /* primary planner-shell offset when sidebar visible */
-      --planner-shell-padding: 18px;   /* padding used inside .planner-shell */
-      --table-right-margin: 12px;      /* small breathing room to prevent right overflow */
-    }
-
-    /* Size the wrapper so the table occupies the viewport width minus the sidebar offset.
-       The wrapper is nudged left by the shell padding so its content visually lines up
-       with full-bleed content while not overlapping the fixed sidebar. */
-    .planner-shell .table-wrapper {
-      position: relative;
-      left: calc(-1 * var(--planner-shell-padding));
-      /* subtract shell padding so the right edge aligns with viewport */
-  width: calc(100vw - var(--planner-sidebar-offset) - var(--planner-shell-padding) - var(--table-right-margin));
-  max-width: calc(100vw - var(--planner-sidebar-offset) - var(--planner-shell-padding) - var(--table-right-margin));
-      box-sizing: border-box;
-      padding-right: 6px;
-      overflow-x: auto;
-    }
-
-    /* When the planner sidebar collapses or on narrow screens reduce the offset */
-    @media (max-width: 900px) {
-  :root { --planner-sidebar-offset: 84px; }
-  .planner-shell .table-wrapper { left: calc(-1 * (var(--planner-shell-padding) / 1.5)); width: calc(100vw - var(--planner-sidebar-offset) - var(--planner-shell-padding) - var(--table-right-margin)); max-width: calc(100vw - var(--planner-sidebar-offset) - var(--planner-shell-padding) - var(--table-right-margin)); }
-    }
-  </style>
-
-{% endblock %}
+<style>
+  .notes-cell {
+  white-space: normal !important;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  max-width: 500px;
+  max-height: 80px;       /* limit vertical growth */
+  overflow-y: auto;}      /* scroll bar if text too long */
+  .badge { padding:4px 8px; border-radius:4px; }
+  .notif-input { padding:4px 6px; border:1px solid #767676; border-radius:4px; width:90px; }
+  .notif-input:focus { outline:none; border-color:#2563eb; box-shadow:0 0 0 3px rgba(37,99,235,0.25); }
+  .notification-post-btn { background:#757576; color:#fff; border:none; padding:6px 10px; border-radius:6px; cursor:pointer; font-weight:600; }
+  .notification-post-btn:hover { background:#1e40af; }
+  .notification-post-btn:active { transform:translateY(1px); }
+  .alarm-critical { color:#520000; }
+  .alarm-warning { color:#ff0000; }
+  .table-wrapper { width:100%; overflow-x:auto; }
+  .planner-table { width:100%; min-width:900px; border-collapse:collapse; }
+  .planner-table th, .planner-table td { padding:8px 10px; border-bottom:1px solid #eef2f7; vertical-align:top; }
+</style>
 
 <script>
-  (function(){
-    const prefix = 'notif_local_';
-    function keyForId(id){ return prefix + id; }
-    function keyForIdx(i){ return prefix + 'idx_' + i; }
-    function loadAll(){ document.querySelectorAll('.notification-edit').forEach(el=>{
-      const id = el.dataset.testingId;
-      const idx = el.dataset.entryIdx;
-      let k = id ? keyForId(id) : (idx ? keyForIdx(idx) : null);
-      if(k){ const v = localStorage.getItem(k); if(v !== null) el.textContent = v; }
-    }); }
-    function saveEl(el){ const id = el.dataset.testingId; const idx = el.dataset.entryIdx; let k = id ? keyForId(id) : (idx ? keyForIdx(idx) : null); if(!k) return; const v = el.textContent.trim(); if(v.length===0) { localStorage.removeItem(k); } else { localStorage.setItem(k, v); } }
-    function saveSiblingPostBtn(btn){ const row = btn.closest('.notif-edit-row'); if(!row) return; const edit = row.querySelector('.notification-edit'); if(edit) saveEl(edit); }
-    async function postNotification(btn){
-      const row = btn.closest('tr');
-      if(!row) return {ok:false, error:'no-row'};
-      const edit = row.querySelector('.notification-edit');
-      const notif = edit ? edit.textContent.trim() : '';
-      if(!notif) return {ok:false, error:'empty'};
-      // collect visible fields from the row (department, equipment, test_type, pm_date, schedule_type, done_tested_date, alarm_level, notes)
-      const cells = row.querySelectorAll('td');
-      const payload = {
-        notification: notif,
-        department: (cells[1] && cells[1].textContent.trim()) || null,
-        equipment: (cells[2] && cells[2].textContent.trim()) || null,
-        testing_type: (cells[3] && cells[3].textContent.trim()) || null,
-        pm_date: (cells[4] && cells[4].textContent.trim()) || null,
-        scheduled_type: (cells[5] && cells[5].textContent.trim()) || null,
-        done_tested_date: (cells[6] && cells[6].textContent.trim()) || null,
-        alarm_level: (cells[7] && cells[7].textContent.trim()) || null,
-        notes: (cells[8] && cells[8].textContent.trim()) || null,
-        attachment: null
-      };
-
-      try{
-        const resp = await fetch('{{ url_for("main.api_notification_post") }}', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
-        const j = await resp.json();
-        if(!j.ok) return {ok:false, error: j.error || 'server-failed'};
-
-        // Insert a row into the With SAP table body (table 2) to reflect persisted notification
-        const withTableBody = document.querySelectorAll('.table-wrapper')[1]?.querySelector('tbody');
-        if(withTableBody){
-          const tr = document.createElement('tr');
-          tr.innerHTML = `
-            <td style="white-space:normal; max-width:320px;">${escapeHtml(notif)}</td>
-            <td>${escapeHtml(payload.department||'')}</td>
-            <td>${escapeHtml(payload.equipment||'')}</td>
-            <td>${escapeHtml(payload.testing_type||'')}</td>
-            <td class="text-center">${escapeHtml(payload.pm_date||'-')}</td>
-            <td class="text-center">${escapeHtml(payload.scheduled_type||'-')}</td>
-            <td class="text-center">${escapeHtml(payload.done_tested_date||'-')}</td>
-            <td class="text-center"><span class="badge">${escapeHtml(payload.alarm_level||'')}</span></td>
-            <td class="notes-cell" style="max-width:320px; white-space:normal;">${escapeHtml(payload.notes||'-')}</td>
-            <td style="white-space:normal; max-width:320px;">-</td>
-          `;
-          withTableBody.insertBefore(tr, withTableBody.firstChild);
-        }
-
-        return {ok:true, rowid:j.rowid};
-      }catch(err){
-        return {ok:false, error: String(err)};
-      }
+(function(){
+  async function submitNotification(btn){
+    const testingId = btn.getAttribute('data-testing-id');
+    const row = btn.closest('tr');
+    if(!testingId || !row) return;
+    const input = row.querySelector('.notif-input');
+    if(!input) return; const raw=(input.value||'').trim();
+    if(raw===''){ input.focus(); return; }
+    if(!/^\d+$/.test(raw)){ input.classList.add('error'); return; }
+    btn.disabled=true; btn.textContent='Saving...';
+    try {
+      const r = await fetch("{{ url_for('main.api_notification_post') }}", {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({testing_id:Number(testingId), notification:Number(raw)})});
+      const j = await r.json();
+      if(!j.ok) throw new Error(j.error||'failed');
+      moveRow(row, raw);
+    } catch(e){ console.warn('save failed', e); btn.disabled=false; btn.textContent='Post it!'; }
+  }
+  function moveRow(row, notif){
+    const tbodyWith=document.querySelector('.with-sap-readonly tbody'); if(!tbodyWith) return;
+    const clone=document.createElement('tr');
+    const cells=Array.from(row.querySelectorAll('td'));
+    // first cell is notification number
+    const tdNotif=document.createElement('td'); tdNotif.textContent=notif==null||notif==''?'-':notif; clone.appendChild(tdNotif);
+    // clone all other cells preserving attachments and week
+    for(let i=1;i<cells.length;i++){
+      const newTd = cells[i].cloneNode(true);
+      // remove interactive elements
+      newTd.querySelectorAll && newTd.querySelectorAll('input,button,textarea').forEach(n=>n.remove());
+      clone.appendChild(newTd);
     }
-
-    function escapeHtml(s){ return String(s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"}[c]; }); }
-    document.addEventListener('DOMContentLoaded', ()=>{
-      loadAll();
-      document.body.addEventListener('blur', (ev)=>{ if(ev.target && ev.target.classList && ev.target.classList.contains('notification-edit')){ saveEl(ev.target); } }, true);
-      document.body.addEventListener('keydown', (ev)=>{ if(ev.key === 'Enter' && ev.target && ev.target.classList && ev.target.classList.contains('notification-edit')){ ev.preventDefault(); ev.target.blur(); } });
-  document.body.addEventListener('click', (ev)=>{ if(ev.target && ev.target.classList && ev.target.classList.contains('notification-post-btn')){ ev.preventDefault(); saveSiblingPostBtn(ev.target); ev.target.blur(); /* small visual feedback */ ev.target.classList.add('posted'); setTimeout(()=>ev.target.classList.remove('posted'),300); /* persist to server and add to With-SAP table */ postNotification(ev.target).then(resp=>{ if(!resp.ok){ console.warn('Post failed', resp.error); /* optionally show a user-visible error */ } else { /* success feedback */ ev.target.textContent = 'Posted'; setTimeout(()=>{ ev.target.textContent = 'Post it!'; },1200); } }); } });
-    });
-  })();
+    tbodyWith.insertBefore(clone, tbodyWith.firstChild);
+    row.remove();
+    const firstBody=document.querySelector('.planner-table tbody');
+    if(firstBody && firstBody.children.length===0){ const tr=document.createElement('tr'); tr.innerHTML='<td colspan="11" class="no-entries">No rows awaiting SAP notification.</td>'; firstBody.appendChild(tr); }
+  }
+  document.addEventListener('click', e=>{ if(e.target && e.target.classList.contains('notification-post-btn')){ e.preventDefault(); submitNotification(e.target); }});
+  document.addEventListener('input', e=>{ if(e.target && e.target.classList.contains('notif-input')){ e.target.value=e.target.value.replace(/[^0-9]/g,''); }});
+})();
 </script>
+{% endblock %}

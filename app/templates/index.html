@@ -27,7 +27,8 @@
                 <div class="nav-group" aria-label="Main">
                     <a href="{{ url_for('main.index') }}" class="nav-item is-active" title="Dashboard">
                         <span class="nav-icon" aria-hidden="true">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13h8V3H3z"></path><path d="M13 21h8V11h-8z"></path><path d="M13 3h8"></path><path d="M3 21h8v-6H3z"></path></svg>
+                            <img src="{{ url_for('static', filename='icons/Dashboard.png') }}" class="icon-img default-icon">
+                            <img src="{{ url_for('static', filename='icons/Dashboard.png') }}" class="icon-img active-icon">
                         </span>
                         <span class="nav-label">Dashboard</span>
                     </a>
@@ -55,6 +56,12 @@
                         </span>
                         <span class="nav-label">Reports</span>
                     </a>
+                    <a href="{{ url_for('main.pm_calendar') }}" class="nav-item" title="PM Calendar">
+                        <span class="nav-icon" aria-hidden="true">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg>
+                        </span>
+                        <span class="nav-label">PM Calendar</span>
+                    </a>
                 </div>
                 <div class="nav-group" aria-label="Management">
                     <a href="{{ url_for('technician.dashboard') }}" class="nav-item" title="Technicians">
@@ -77,7 +84,7 @@
                     </a>
                     <a href="#" class="nav-item" title="Settings" aria-disabled="true">
                         <span class="nav-icon" aria-hidden="true">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 8 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 8a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 8 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09A1.65 1.65 0 0 0 15 4.6a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.36 0 .7.07 1 .2.39.16.6.59.6 1.02V11a2 2 0 1 1 0 4h-.09c-.43 0-.86.21-1.11.6z"/></svg>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 8 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 15a1.  1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 8a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 8 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09A1.65 1.65 0 0 0 15 4.6a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.36 0 .7.07 1 .2.39.16.6.59.6 1.02V11a2 2 0 1 1 0 4h-.09c-.43 0-.86.21-1.11.6z"/></svg>
                         </span>
                         <span class="nav-label">Settings</span>
                     </a>
@@ -154,7 +161,7 @@
                         <span class="kpi-chip chip-planned" data-label="Planned"><i class="kpi-dot"></i> Planned {{ k.planned_tests }}</span>
                         <span class="kpi-chip chip-unplanned" data-label="Unplanned"><i class="kpi-dot"></i> Unplanned {{ k.unplanned_tests }}</span>
                         <span class="kpi-chip chip-validation" data-label="Validation" style="display: {{ 'inline-flex' if (k.validation_tests or 0) > 0 else 'none' }};"><i class="kpi-dot"></i> Validation {{ k.validation_tests }}</span>
-                        <span class="kpi-chip chip-other" data-label="Other" style="display: {{ 'inline-flex' if (k.other_schedule_tests or 0) > 0 else 'none' }};"><i class="kpi-dot"></i> Other {{ k.other_schedule_tests }}</span>
+                        <span class="kpi-chip chip-other" data-label="Other" style="display: {{ 'inline-flex' if (k.other_schedule_tests|default(0, true)) > 0 else 'none' }};"><i class="kpi-dot"></i> Other {{ k.other_schedule_tests }}</span>
                     </div>
                 </div>
                 <div class="panel kpi-card kpi-completed js-kpi" data-kpi="completed" title="View details"><div class="card-title">Completed</div><div class="card-count">{{ k.completed }}</div></div>
