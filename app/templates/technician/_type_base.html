@@ -181,7 +181,7 @@
       <table class="table" style="white-space:nowrap;">
         <thead>
           <tr>
-            <th class="text-center">ID</th>
+            <th class="text-center">Planner ID</th>
             <th class="text-center">Week #</th>
             <th class="text-left">Department</th>
             <th class="text-left">Equipment</th>
@@ -198,7 +198,7 @@
         <tbody>
           {% for t in tasks %}
           <tr>
-            <td class="text-center">{{ t.planner_id or '' }}</td>
+            <td class="text-center" title="Testing ID: {{ t.id or '' }}">{{ t.planner_id or '' }}</td>
             <td class="text-center">{{ t.week_number or '' }}</td>
             <td class="text-left">{{ t.department }}</td>
             <td class="text-left">{{ t.equipment }}</td>

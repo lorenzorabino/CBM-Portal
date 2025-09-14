@@ -86,8 +86,8 @@
                         </select>
                         <input type="text" name="equipment_new_0" id="equipment_new_0" placeholder="Enter new equipment" class="hidden-input">
                     </td>
-                    <td><input type="date" name="date_0" id="date_0" required onchange="updateDay(this)"></td>
-                    <td><input type="text" name="day_0" id="day_0" placeholder="Day" readonly></td>
+                    <td><input type="date" name="date_0" id="date_0" required onchange="updateDay(this)" readonly tabindex="-1" aria-readonly="true" style="pointer-events:none; background:#f7f7f7;"></td>
+                    <td><input type="text" name="day_0" id="day_0" placeholder="Day" readonly tabindex="-1" aria-readonly="true" style="pointer-events:none; background:#f7f7f7;"></td>
                     <td>
                         <div class="testing-grid">
                             <label><input type="checkbox" name="testing_0" value="Vibration Analysis"> <span class="tag va">Vibration Analysis</span></label>
@@ -120,6 +120,17 @@
         </div>
     </form>
 </main>
+
+<!-- Duplicate warning modal -->
+<div id="dupModal" class="modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.35); align-items:center; justify-content:center; z-index:1000;">
+    <div class="modal-content" style="background:#fff; padding:16px; border-radius:8px; width:min(640px, 92vw); box-shadow:0 10px 24px rgba(0,0,0,0.2);">
+        <h3 style="margin-top:0;">Possible duplicate planner entry</h3>
+        <div id="dupBody" style="max-height:50vh; overflow:auto; font-size:0.95rem; line-height:1.4;"></div>
+        <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:12px;">
+            <button type="button" class="btn-secondary" id="dupDismiss">Dismiss</button>
+        </div>
+    </div>
+    </div>
 
 {% if recent_planners and recent_planners|length > 0 %}
 <section class="planner-container" style="margin-top: 20px;">
@@ -289,9 +300,140 @@
         }
     }
 
+    // --- Dynamic rows: auto-add and done cleanup ---
+    function getMaxIndex() {
+        let max = -1;
+        document.querySelectorAll('select[id^="department_"], input[id^="date_"]').forEach(el => {
+            const m = el.id.match(/_(\d+)$/);
+            if (m) max = Math.max(max, parseInt(m[1], 10));
+        });
+        return max;
+    }
+
+    function rowSelectors(i) {
+        return {
+            dept: document.getElementById('department_' + i),
+            deptNew: document.getElementById('department_new_' + i),
+            equip: document.getElementById('equipment_' + i),
+            equipNew: document.getElementById('equipment_new_' + i),
+            date: document.getElementById('date_' + i),
+            day: document.getElementById('day_' + i),
+            pm: document.getElementById('pm_date_' + i),
+            sched: document.getElementById('schedule_type_' + i),
+            target: document.getElementById('proposed_target_date_' + i),
+            tests: Array.from(document.querySelectorAll('input[name="testing_' + i + '"]')),
+        };
+    }
+
+    function isRowFilled(i) {
+        const r = rowSelectors(i);
+        if (!r.dept || !r.equip || !r.date || !r.pm || !r.sched || !r.target) return false;
+        // Consider "filled" when required fields have a value and at least one test type checked
+        const requiredOk = !!(r.dept.value && (r.equip.value || (r.equip.value==='Add New' && r.equipNew && r.equipNew.value)) && r.date.value && r.pm.value && r.sched.value && r.target.value);
+        const anyTest = r.tests.some(cb => cb.checked);
+        return requiredOk && anyTest;
+    }
+
+    function isRowEmpty(i) {
+        const r = rowSelectors(i);
+        if (!r.dept && !r.equip && !r.pm && !r.target && (!r.tests || r.tests.length === 0)) return true;
+        // Consider a row empty if user hasn't selected dept/equipment, hasn't set PM/Target, and no tests are checked.
+        // Ignore Input Date/Day since we auto-prefill those.
+        const deptEmpty = !(r.dept && r.dept.value);
+        const equipEmpty = !(
+            (r.equip && r.equip.value && r.equip.value !== 'Add New') ||
+            (r.equip && r.equip.value === 'Add New' && r.equipNew && r.equipNew.value)
+        );
+        const pmEmpty = !(r.pm && r.pm.value);
+        const targetEmpty = !(r.target && r.target.value);
+        const noTests = !(r.tests && r.tests.some(cb => cb.checked));
+        return deptEmpty && equipEmpty && pmEmpty && targetEmpty && noTests;
+    }
+
+    function wireRowHandlers(i) {
+        const r = rowSelectors(i);
+        const trigger = () => {
+            const last = getMaxIndex();
+            if (i === last && isRowFilled(i)) {
+                addNewRow();
+            }
+            // When a row transitions to filled, run a duplicate check
+            if (isRowFilled(i)) {
+                try { checkDuplicateForRow(i); } catch(e) { console.warn('dup-check error', e); }
+            }
+        };
+        [r.dept, r.equip, r.equipNew, r.date, r.pm, r.sched, r.target].forEach(el => {
+            if (el) el.addEventListener('change', trigger);
+        });
+        r.tests.forEach(cb => cb.addEventListener('change', trigger));
+    }
+
+    function addNewRow() {
+        const tmpl = document.getElementById('templateRow');
+        if (!tmpl) return;
+        const i = getMaxIndex() + 1;
+        const tr = tmpl.cloneNode(true);
+        tr.id = '';
+        tr.style.display = '';
+        // Enable fields and remap ids/names
+        tr.querySelectorAll('[id], [name]').forEach(el => {
+            if (el.hasAttribute('disabled')) el.removeAttribute('disabled');
+            if (el.id) el.id = el.id.replace('_template', '_' + i);
+            if (el.name) el.name = el.name.replace('_template', '_' + i);
+            // Reset values/checked
+            if (el.tagName === 'INPUT') {
+                if (el.type === 'checkbox') el.checked = false; else el.value = '';
+            } else if (el.tagName === 'SELECT') {
+                el.selectedIndex = 0;
+            }
+        });
+        // Insert row
+        const tbody = document.querySelector('#plannerTable tbody');
+        tbody.appendChild(tr);
+        // Hook dynamic behaviors
+    const deptSel = document.getElementById('department_' + i);
+    const equipSel = document.getElementById('equipment_' + i);
+    const equipNew = document.getElementById('equipment_new_' + i);
+        if (deptSel) deptSel.addEventListener('change', () => onDepartmentChange(deptSel, 'equipment_' + i, 'equipment_new_' + i));
+        if (equipSel) equipSel.addEventListener('change', () => onEquipmentChange(equipSel, 'equipment_new_' + i));
+        const dateEl = document.getElementById('date_' + i);
+        const dayEl = document.getElementById('day_' + i);
+    const schedEl = document.getElementById('schedule_type_' + i);
+        if (dateEl) {
+            // Prefill with today and mirror non-editable behavior like first row
+            const todayStr = new Date().toISOString().slice(0,10);
+            if (!dateEl.value) dateEl.value = todayStr;
+            // Block interaction and tabbing
+            dateEl.readOnly = true;
+            dateEl.setAttribute('tabindex', '-1');
+            dateEl.setAttribute('aria-readonly', 'true');
+            dateEl.style.pointerEvents = 'none';
+            dateEl.style.background = '#f7f7f7';
+            // Update day from date
+            updateDay(dateEl);
+            // Still wire change for programmatic updates (if any)
+            dateEl.addEventListener('change', () => updateDay(dateEl));
+        }
+        if (dayEl) {
+            dayEl.readOnly = true;
+            dayEl.setAttribute('tabindex', '-1');
+            dayEl.setAttribute('aria-readonly', 'true');
+            dayEl.style.pointerEvents = 'none';
+            dayEl.style.background = '#f7f7f7';
+        }
+        // Default schedule type to Planned for new rows
+        if (schedEl) {
+            try { schedEl.value = 'Planned'; if (typeof updateScheduleColor === 'function') updateScheduleColor(schedEl); } catch(e) {}
+        }
+        // Make sure equipment options reset according to dept
+        populateEquipmentOptions(equipSel, deptSel ? deptSel.value : '');
+        // Wire auto-add on changes
+        wireRowHandlers(i);
+    }
+
     // Initialize existing department/equipment selects on page load
     document.addEventListener('DOMContentLoaded', () => {
-        // For each department select on the page, populate its equipment select if a value exists
+    // For each department select on the page, populate its equipment select if a value exists
         document.querySelectorAll('select[id^="department_"]').forEach(deptSel => {
             const suffix = deptSel.id.split('department_')[1];
             const equipmentId = 'equipment_' + suffix;
@@ -305,6 +447,9 @@
             if (equipmentSel && equipmentSel.value === 'Add New') onEquipmentChange(equipmentSel, equipmentNewId);
         });
 
+    // wire row 0 for auto-add
+    wireRowHandlers(0);
+
         // Also handle template row ids
         const deptTemplate = document.getElementById('department_template');
         if (deptTemplate) {
@@ -316,6 +461,95 @@
                 try { d.min = todayStr; } catch(e) {}
                 if (d.value) updateDay(d);
             });
+
+        // Prefill current year/week and today's input date for the first row
+        try {
+            const now = new Date();
+            const weekInput = document.getElementById('week_number');
+            const yearInput = document.getElementById('year');
+            if (weekInput) {
+                try { weekInput.value = getISOWeek(now); } catch(e) {}
+            }
+            if (yearInput) {
+                yearInput.value = now.getFullYear();
+            }
+            const date0 = document.getElementById('date_0');
+            if (date0 && !date0.value) {
+                date0.value = todayStr;
+                updateDay(date0); // this will also populate the Day and ensure week/year
+            }
+        } catch (e) { /* ignore */ }
+
+        // Remove trailing empty row when Done is checked
+        const doneCb = document.getElementById('done_checkbox');
+        if (doneCb) {
+            doneCb.addEventListener('change', () => {
+                if (doneCb.checked) {
+                    const last = getMaxIndex();
+                    if (last >= 1 && isRowEmpty(last)) {
+                        const lastRow = document.getElementById('date_' + last)?.closest('tr');
+                        if (lastRow) lastRow.remove();
+                    }
+                } else {
+                    // When unchecked, ensure there is one trailing empty row
+                    const last = getMaxIndex();
+                    if (last >= 0 && !isRowEmpty(last)) {
+                        addNewRow();
+                    }
+                }
+            });
+        }
     });
+
+    // --- Duplicate checking ---
+    async function checkDuplicateForRow(i) {
+        const r = rowSelectors(i);
+        if (!r.dept || !r.equip || !r.pm || !r.sched) return;
+        // Only attempt if department, equipment, pm_date (or date), and schedule have values and at least one test selected.
+        const anyTest = r.tests && r.tests.some(cb => cb.checked);
+        const dept = r.dept.value;
+        const dept_new = document.getElementById('department_new_' + i)?.value || '';
+        const equip = r.equip.value;
+        const equip_new = r.equipNew?.value || '';
+        const dateVal = r.date?.value || '';
+        const pmDate = r.pm.value || '';
+        const sched = r.sched.value || '';
+        const week = document.getElementById('week_number')?.value || '';
+        const year = document.getElementById('year')?.value || '';
+        if (!(dept && (equip || (equip==='Add New' && equip_new)) && (pmDate || dateVal) && sched && anyTest)) return;
+        const payload = { department: dept, department_new: dept_new, equipment: equip, equipment_new: equip_new, date: dateVal, pm_date: pmDate, schedule_type: sched, week_number: week, year: year };
+        let resp;
+        try {
+            resp = await fetch('/api/planner/check_duplicate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        } catch (e) { return; }
+        if (!resp.ok) return;
+        let data; try { data = await resp.json(); } catch(e) { return; }
+        if (!data || !data.ok) return;
+        const matches = data.matches || [];
+        if (matches.length === 0) return;
+        // Build message
+        const lines = [];
+        lines.push(`Your input matches ${matches.length} existing planner entr${matches.length>1?'ies':'y'}:`);
+        lines.push('<ul style="margin:8px 0 0 16px;">');
+        matches.slice(0, 10).forEach(m => {
+            const dt = (m.pm_date || m.date || '').toString().slice(0,10);
+            lines.push(`<li><strong>ID ${m.id}</strong> — ${m.department} / ${m.equipment} — ${dt} — ${m.schedule_type || ''} (W${m.week_number}, ${m.year})</li>`);
+        });
+        lines.push('</ul>');
+        // Show modal with message
+        showDupModal(lines.join(''));
+    }
+
+    function showDupModal(html) {
+        const modal = document.getElementById('dupModal');
+        const body = document.getElementById('dupBody');
+        const btn = document.getElementById('dupDismiss');
+        if (!modal || !body || !btn) return;
+        body.innerHTML = html;
+        modal.style.display = 'flex';
+        const close = () => { modal.style.display = 'none'; body.innerHTML = ''; btn.removeEventListener('click', close); };
+        btn.addEventListener('click', close);
+        modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
+    }
 </script>
 {% endblock %}

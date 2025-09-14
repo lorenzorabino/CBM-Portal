@@ -13,41 +13,29 @@ ALLOWED_EXTS = {'.pdf', '.doc', '.docx', '.xls', '.xlsx', '.csv', '.png', '.jpg'
 
 
 def _ensure_schema(conn):
-    # Ensure CBM_Testing has needed columns
-    cols = [c[1] for c in conn.execute(text("PRAGMA table_info('CBM_Testing')"))]
-    add_cols = []
-    if 'planner_id' not in cols:
-        add_cols.append("ALTER TABLE CBM_Testing ADD COLUMN planner_id INTEGER")
-    if 'Test_Type' not in cols:
-        add_cols.append("ALTER TABLE CBM_Testing ADD COLUMN Test_Type TEXT")
-    if 'Done' not in cols:
-        add_cols.append("ALTER TABLE CBM_Testing ADD COLUMN Done INTEGER DEFAULT 0")
-    if 'Status' not in cols:
-        add_cols.append("ALTER TABLE CBM_Testing ADD COLUMN Status TEXT")
-    if 'Alarm_Level' not in cols:
-        add_cols.append("ALTER TABLE CBM_Testing ADD COLUMN Alarm_Level TEXT")
-    if 'Notes' not in cols:
-        add_cols.append("ALTER TABLE CBM_Testing ADD COLUMN Notes TEXT")
-    # New: actual date when technician finished testing
-    if 'Done_Tested_Date' not in cols:
-        add_cols.append("ALTER TABLE CBM_Testing ADD COLUMN Done_Tested_Date TEXT")
-    for sql in add_cols:
-        try:
-            conn.execute(text(sql))
-        except Exception:
-            pass
-    # Ensure attachments table exists
-    conn.execute(text(
-        """
-        CREATE TABLE IF NOT EXISTS CBM_Testing_Attachments (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            testing_id INTEGER,
-            filename TEXT,
-            path TEXT,
-            uploaded_at TEXT
+    """Ensure CBM_Testing has denormalized planner_* columns (idempotent)."""
+    cols = [
+        ("planner_week_number", "INT"),
+        ("planner_year", "INT"),
+        ("planner_department", "NVARCHAR(255)"),
+        ("planner_equipment", "NVARCHAR(255)"),
+        ("planner_pm_date", "NVARCHAR(50)"),
+        ("planner_schedule_type", "NVARCHAR(100)"),
+    ]
+    for name, typ in cols:
+        ddl = f"""
+        IF NOT EXISTS (
+            SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('dbo.CBM_Testing') AND name = '{name}'
         )
+        BEGIN
+            ALTER TABLE dbo.CBM_Testing ADD {name} {typ} NULL;
+        END
         """
-    ))
+        try:
+            conn.execute(text(ddl))
+        except Exception:
+            # Ignore if lacking rights or already exists
+            pass
 
 
 def _row_to_task_dict(row):
@@ -60,9 +48,19 @@ def _row_to_task_dict(row):
             done_date = row.get('Done_Tested_Date')
         except Exception:
             done_date = None
+    # Prefer actual planner_id; fall back to effective_planner_id (derived)
+    try:
+        pid = row.get('planner_id') if hasattr(row, 'get') else row['planner_id']
+    except Exception:
+        pid = None
+    if not pid:
+        try:
+            pid = row.get('effective_planner_id') if hasattr(row, 'get') else row['effective_planner_id']
+        except Exception:
+            pid = None
     return dict(
         id=row['Testing_ID'],
-        planner_id=row['planner_id'],
+        planner_id=pid,
         testing_type=row['Test_Type'],
         status=row['Status'] or ('done' if (row['Done'] or 0) == 1 else 'todo'),
         alarm_level=row['Alarm_Level'],
@@ -114,12 +112,30 @@ def _fetch_tasks_for_slug(conn, slug: str, filters: dict | None = None):
     binds = {f"tt{i}": v for i, v in enumerate(synonyms)}
     inlist = ", ".join(":" + k for k in binds.keys())
     base = [
-    "SELECT t.Testing_ID, t.Test_Type, t.Status, t.Done, t.Alarm_Level, t.Notes, t.Done_Tested_Date, t.planner_id,",
-        "       p.department, p.equipment, p.date, p.day, p.pm_date, p.schedule_type, p.proposed_target_date,",
-        "       p.week_number, p.year",
+        "SELECT t.Testing_ID, t.Test_Type, t.Status, t.Done, t.Alarm_Level, t.Notes, t.Done_Tested_Date, t.planner_id,",
+        "       COALESCE(t.planner_id, rp.resolved_planner_id) AS effective_planner_id,",
+        "       COALESCE(p.department, t.planner_department) AS department,",
+        "       COALESCE(p.equipment, t.planner_equipment) AS equipment,",
+        "       p.date, p.day,",
+        "       COALESCE(p.pm_date, t.planner_pm_date) AS pm_date,",
+        "       COALESCE(p.schedule_type, t.planner_schedule_type) AS schedule_type,",
+        "       p.proposed_target_date,",
+        "       COALESCE(p.week_number, t.planner_week_number) AS week_number,",
+        "       COALESCE(p.year, t.planner_year) AS year",
         "FROM CBM_Testing t",
         "LEFT JOIN Planner p ON p.id = t.planner_id",
-        f"WHERE TRIM(LOWER(t.Test_Type)) IN ({inlist})"
+        "OUTER APPLY (",
+        "  SELECT TOP 1 p2.id AS resolved_planner_id",
+        "  FROM Planner p2",
+        "  WHERE COALESCE(p2.week_number, 0) = COALESCE(t.planner_week_number, 0)",
+        "    AND COALESCE(p2.year, 0) = COALESCE(t.planner_year, 0)",
+        "    AND NULLIF(LTRIM(RTRIM(CAST(p2.department AS NVARCHAR(255)))), '') = NULLIF(LTRIM(RTRIM(CAST(t.planner_department AS NVARCHAR(255)))), '')",
+        "    AND NULLIF(LTRIM(RTRIM(CAST(p2.equipment AS NVARCHAR(255)))), '') = NULLIF(LTRIM(RTRIM(CAST(t.planner_equipment AS NVARCHAR(255)))), '')",
+        "    AND NULLIF(LTRIM(RTRIM(CAST(p2.pm_date AS NVARCHAR(50)))), '') = NULLIF(LTRIM(RTRIM(CAST(t.planner_pm_date AS NVARCHAR(50)))), '')",
+        "  ORDER BY p2.id DESC",
+        ") rp",
+        # In SQL Server, TEXT/NTEXT cannot be passed to LOWER/TRIM; CAST to NVARCHAR(MAX)
+        f"WHERE LTRIM(RTRIM(LOWER(CAST(t.Test_Type AS NVARCHAR(MAX))))) IN ({inlist})"
     ]
     # optional filters
     if filters:
@@ -129,16 +145,16 @@ def _fetch_tasks_for_slug(conn, slug: str, filters: dict | None = None):
             binds['f_planner_id'] = filters['planner_id']
         else:
             if filters.get('week_number'):
-                base.append("AND p.week_number = :f_week")
+                base.append("AND COALESCE(p.week_number, t.planner_week_number) = :f_week")
                 binds['f_week'] = filters['week_number']
             if filters.get('department'):
-                base.append("AND p.department LIKE :f_dept")
+                base.append("AND COALESCE(p.department, t.planner_department) LIKE :f_dept")
                 binds['f_dept'] = f"%{filters['department']}%"
             if filters.get('equipment'):
-                base.append("AND p.equipment LIKE :f_eqp")
+                base.append("AND COALESCE(p.equipment, t.planner_equipment) LIKE :f_eqp")
                 binds['f_eqp'] = f"%{filters['equipment']}%"
             if filters.get('schedule_type'):
-                base.append("AND LOWER(p.schedule_type) = :f_sched")
+                base.append("AND LOWER(CAST(COALESCE(p.schedule_type, t.planner_schedule_type) AS NVARCHAR(MAX))) = :f_sched")
                 binds['f_sched'] = str(filters['schedule_type']).strip().lower()
         if filters.get('status'):
             st = str(filters['status']).strip().lower()
@@ -147,12 +163,13 @@ def _fetch_tasks_for_slug(conn, slug: str, filters: dict | None = None):
             elif st in ('ongoing', 'todo'):
                 base.append("AND (COALESCE(t.Done,0) = 0 AND LOWER(TRIM(COALESCE(t.Status,''))) IN ('ongoing','todo',''))")
             else:
-                base.append("AND LOWER(TRIM(COALESCE(t.Status,''))) = :f_status")
+                base.append("AND LOWER(LTRIM(RTRIM(COALESCE(CAST(t.Status AS NVARCHAR(MAX)), '')))) = :f_status")
                 binds['f_status'] = st
         if filters.get('alarm_level'):
-            base.append("AND LOWER(t.Alarm_Level) = :f_alarm")
+            base.append("AND LOWER(CAST(t.Alarm_Level AS NVARCHAR(MAX))) = :f_alarm")
             binds['f_alarm'] = str(filters['alarm_level']).strip().lower()
-    base.append("ORDER BY p.date ASC, t.Testing_ID DESC")
+    # Avoid sorting on TEXT/NTEXT; cast to NVARCHAR then TRY_CONVERT to DATE for ordering
+    base.append("ORDER BY TRY_CONVERT(date, NULLIF(LTRIM(RTRIM(CAST(p.date AS NVARCHAR(50)))), '')) ASC, t.Testing_ID DESC")
     sql = text("\n".join(base))
     res = conn.execute(sql, binds).mappings()
     tasks = []
@@ -207,15 +224,27 @@ def _render_type_page(slug: str, template_name: str):
     with db.engine.begin() as conn:
         tasks = _fetch_tasks_for_slug(conn, slug, f)
         # Fetch dropdown data from Planner (current values used in planning)
-        dep_rows = conn.execute(text("SELECT DISTINCT department FROM Planner WHERE TRIM(COALESCE(department,''))<>'' ORDER BY department ASC")).fetchall()
+        dep_rows = conn.execute(text(
+            "SELECT DISTINCT CAST(department AS NVARCHAR(255)) AS department "
+            "FROM Planner "
+            "WHERE NULLIF(LTRIM(RTRIM(CAST(department AS NVARCHAR(255)))), '') IS NOT NULL "
+            "ORDER BY CAST(department AS NVARCHAR(255)) ASC"
+        )).fetchall()
         department_list = [r[0] for r in dep_rows]
         if f.get('department'):
             eq_rows = conn.execute(text(
-                "SELECT DISTINCT equipment FROM Planner WHERE TRIM(COALESCE(equipment,''))<>'' AND department = :dep ORDER BY equipment ASC"
+                "SELECT DISTINCT CAST(equipment AS NVARCHAR(255)) AS equipment "
+                "FROM Planner "
+                "WHERE NULLIF(LTRIM(RTRIM(CAST(equipment AS NVARCHAR(255)))), '') IS NOT NULL "
+                "AND CAST(department AS NVARCHAR(255)) = :dep "
+                "ORDER BY CAST(equipment AS NVARCHAR(255)) ASC"
             ), {"dep": f['department']}).fetchall()
         else:
             eq_rows = conn.execute(text(
-                "SELECT DISTINCT equipment FROM Planner WHERE TRIM(COALESCE(equipment,''))<>'' ORDER BY equipment ASC"
+                "SELECT DISTINCT CAST(equipment AS NVARCHAR(255)) AS equipment "
+                "FROM Planner "
+                "WHERE NULLIF(LTRIM(RTRIM(CAST(equipment AS NVARCHAR(255)))), '') IS NOT NULL "
+                "ORDER BY CAST(equipment AS NVARCHAR(255)) ASC"
             )).fetchall()
         equipment_list = [r[0] for r in eq_rows]
     return render_template(template_name, tasks=tasks, page_title=label, filters=f,
@@ -280,7 +309,10 @@ def dashboard():
         _ensure_schema(conn)
         base = (
             "SELECT t.Testing_ID, t.Test_Type, t.Status, t.Done, t.Alarm_Level, t.Notes, t.Done_Tested_Date, t.planner_id, "
-            "p.department, p.equipment, p.week_number, p.year "
+            "COALESCE(p.department, t.planner_department) AS department, "
+            "COALESCE(p.equipment, t.planner_equipment) AS equipment, "
+            "COALESCE(p.week_number, t.planner_week_number) AS week_number, "
+            "COALESCE(p.year, t.planner_year) AS year "
             "FROM CBM_Testing t LEFT JOIN Planner p ON p.id = t.planner_id"
         )
         clauses = []
@@ -300,7 +332,7 @@ def dashboard():
             params['tt'] = f"%{ttype}%"
         if clauses:
             base += " WHERE " + " AND ".join(clauses)
-        base += " ORDER BY t.Testing_ID DESC LIMIT 200"
+        base += " ORDER BY t.Testing_ID DESC OFFSET 0 ROWS FETCH NEXT 200 ROWS ONLY"
         res = conn.execute(text(base), params)
         tasks = []
         for r in res.mappings():

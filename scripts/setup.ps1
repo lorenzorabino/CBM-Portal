@@ -85,7 +85,8 @@ $req = Join-Path -Path (Get-Location) -ChildPath "requirements.txt"
 if (Test-Path $lock) {
     Write-Host "[setup] Installing dependencies from requirements.lock.txt..." -ForegroundColor Cyan
     & $venvPython -m pip install -r $lock
-} elseif (Test-Path $req) {
+}
+if (Test-Path $req) {
     Write-Host "[setup] Installing dependencies from requirements.txt..." -ForegroundColor Cyan
     & $venvPython -m pip install -r $req
 } else {

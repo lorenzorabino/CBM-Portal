@@ -16,38 +16,29 @@ def create_app():
         template_folder=os.path.join(os.path.dirname(__file__), "templates")
     )
 
-    # Database setup
-    db_path = os.path.join(base_dir, 'database', 'portal_demo3.db')
-    app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
+    # Database setup: MSSQL required
+    mssql_conn = os.environ.get('MSSQL_CONN')
+    if not mssql_conn:
+        raise RuntimeError("MSSQL_CONN is required. Set a valid SQL Server connection string (pyodbc URL).")
+    # Nudge developers to use CBM2, not CBM
+    try:
+        if '://'+'' in mssql_conn and (mssql_conn.rstrip().split('/')[-1].split('?')[0].upper() == 'CBM'):
+            # Visible console warning only; app still runs.
+            print("[WARN] MSSQL_CONN points to 'CBM'. Please switch to 'CBM2'.", flush=True)
+    except Exception:
+        pass
+    app.config['SQLALCHEMY_DATABASE_URI'] = mssql_conn
+    # Helpful for long-lived connections against SQL Server
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+        'pool_pre_ping': True,
+    }
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     app.config['SECRET_KEY'] = 'your_secret_key_here'
 
     # Initialize db
     db.init_app(app)
 
-    # Ensure attachments table exists
-    with app.app_context():
-        try:
-            from sqlalchemy import text
-            with db.engine.begin() as conn:
-                conn.execute(text(
-                    """
-                    CREATE TABLE IF NOT EXISTS Testing_Attachments (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        testing_id INTEGER NOT NULL,
-                        file_name TEXT NOT NULL,
-                        original_name TEXT,
-                        mime_type TEXT,
-                        size INTEGER,
-                        uploaded_at TEXT DEFAULT (datetime('now')),
-                        equipment_id INTEGER,
-                        test_type TEXT
-                    )
-                    """
-                ))
-        except Exception:
-            # Non-fatal if creation fails; routes will handle gracefully
-            pass
+    # No runtime DDL: schema should be created in SQL Server via migration scripts
 
     # Register blueprints
     app.register_blueprint(main)

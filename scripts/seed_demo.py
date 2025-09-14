@@ -71,50 +71,8 @@ SCHEDULE_TYPES = ['Planned', 'Unplanned', 'Validation']
 
 
 def ensure_schema(conn):
-    # Ensure Planner exists with expected columns
-    conn.execute(text(
-        """
-        CREATE TABLE IF NOT EXISTS Planner (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            week_number INTEGER,
-            year INTEGER,
-            department TEXT,
-            equipment TEXT,
-            date TEXT,
-            day TEXT,
-            pm_date TEXT,
-            schedule_type TEXT,
-            proposed_target_date TEXT,
-            created_at TEXT DEFAULT (datetime('now'))
-        )
-        """
-    ))
-    # Ensure CBM_Testing has the needed columns (compatible with app behavior)
-    cols = [c[1] for c in conn.execute(text("PRAGMA table_info('CBM_Testing')"))]
-    def add_col(name, ddl):
-        if name not in cols:
-            conn.execute(text(f"ALTER TABLE CBM_Testing ADD COLUMN {ddl}"))
-    add_col('planner_id', 'planner_id INTEGER')
-    add_col('Test_Type', 'Test_Type TEXT')
-    add_col('Done', 'Done INTEGER DEFAULT 0')
-    add_col('Status', 'Status TEXT')
-    add_col('Alarm_Level', 'Alarm_Level TEXT')
-    add_col('Notes', 'Notes TEXT')
-    add_col('Done_Tested_Date', 'Done_Tested_Date TEXT')
-    # Optional: attachments table referenced by routes (safe to exist)
-    try:
-        conn.execute(text(
-            """
-            CREATE TABLE IF NOT EXISTS CBM_Testing_Attachments (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                testing_id INTEGER NOT NULL,
-                filename TEXT NOT NULL,
-                uploaded_at TEXT DEFAULT (datetime('now'))
-            )
-            """
-        ))
-    except Exception:
-        pass
+    # MSSQL runtime: schema creation is handled by migration; no PRAGMA/SQLite DDL here
+    return
 
 
 def purge_other_test_types(conn):
@@ -138,7 +96,7 @@ def upsert_equipment(conn):
     for dept, machines in EQUIPMENT_FIXTURES.items():
         for m in machines:
             exists = conn.execute(
-                text("SELECT 1 FROM Equipment WHERE Department = :d AND Machine = :m LIMIT 1"),
+                text("SELECT TOP 1 1 FROM Equipment WHERE Department = :d AND Machine = :m"),
                 {"d": dept, "m": m}
             ).fetchone()
             if not exists:
@@ -157,7 +115,7 @@ def upsert_technicians(conn):
     ]
     for name, exp, email in techs:
         exists = conn.execute(
-            text("SELECT 1 FROM CBM_Technician WHERE Name = :n LIMIT 1"),
+            text("SELECT TOP 1 1 FROM CBM_Technician WHERE Name = :n"),
             {"n": name}
         ).fetchone()
         if not exists:
@@ -232,13 +190,13 @@ def seed_week(conn, week_number: int, year: int, target_rows: int = 12, age_week
             "pm": pm_dt,
             "sched": sched,
             "ptd": pm_dt,
-        })
-        pid = conn.execute(text("SELECT last_insert_rowid()")).scalar()
-        created_ids.append(pid)
+    })
+    pid = conn.execute(text("SELECT CAST(SCOPE_IDENTITY() AS INT)")).scalar()
+    created_ids.append(pid)
 
     # Use both newly created and some existing planners for richer distribution
     existing_ids = [r[0] for r in conn.execute(text(
-        "SELECT id FROM Planner WHERE week_number = :w AND year = :y ORDER BY id DESC LIMIT 20"
+        "SELECT TOP 20 id FROM Planner WHERE week_number = :w AND year = :y ORDER BY id DESC"
     ), {"w": week_number, "y": year}).fetchall()]
     planner_ids = list(dict.fromkeys(created_ids + existing_ids))  # preserve order, unique
 
@@ -249,7 +207,7 @@ def seed_week(conn, week_number: int, year: int, target_rows: int = 12, age_week
         if not prow:
             continue
         eq_name, date_str = prow
-        eq_row = conn.execute(text("SELECT EquipmentID FROM Equipment WHERE Machine = :m LIMIT 1"), {"m": eq_name}).fetchone()
+        eq_row = conn.execute(text("SELECT TOP 1 EquipmentID FROM Equipment WHERE Machine = :m"), {"m": eq_name}).fetchone()
         equipment_id = eq_row[0] if eq_row else None
 
         # Ensure between 3-6 tasks per planner
@@ -454,7 +412,10 @@ def seed_week(conn, week_number: int, year: int, target_rows: int = 12, age_week
         conn.execute(text(
             """
             UPDATE CBM_Testing
-            SET Done_Tested_Date = COALESCE(NULLIF(Trim(Test_Date), ''), date('now'))
+            SET Done_Tested_Date = COALESCE(
+                NULLIF(TRIM(COALESCE(Test_Date, '')), ''),
+                CONVERT(VARCHAR(10), GETDATE(), 23)
+            )
             WHERE (LOWER(TRIM(COALESCE(Status, ''))) = 'completed' OR LOWER(TRIM(COALESCE(Status, ''))) = 'done')
               AND (Done_Tested_Date IS NULL OR TRIM(COALESCE(Done_Tested_Date, '')) = '')
             """

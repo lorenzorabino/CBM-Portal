@@ -1,31 +1,37 @@
-<!DOCTYPE html>
-<html>
-<head>
-  <title>PM Calendar</title>
-  <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.css" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js"></script>
-  <style>
+<title>PM Calendar Schedule</title>
+{% extends 'base.html' %}
+
+{% block title %}PM Calendar{% endblock %}
+
+{% block extra_head %}
+<link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.css" rel="stylesheet">
+<style>
     #calendar {
-      max-width: 1100px;
-      margin: 40px auto;
+    width: 95%;
+    max-width: 1800px; /* big monitors */
+    margin: 20px auto;
     }
-  </style>
-</head>
-<body>
+
+</style>
+{% endblock %}
+
+{% block content %}
   <h2 style="text-align:center;">Preventive Maintenance Calendar</h2>
   <div id="calendar"></div>
+{% endblock %}
 
-    <script>
-    document.addEventListener("DOMContentLoaded", function() {
-        var calendarEl = document.getElementById("calendar");
-        var calendar = new FullCalendar.Calendar(calendarEl, {
-        initialView: "dayGridMonth",
-        firstDay: 1,   //Make Monday the first day of the week
-        events: "/calendar/events"
-        });
-        calendar.render();
+{% block extra_scripts %}
+<script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    var calendarEl = document.getElementById("calendar");
+    if (!calendarEl) return;
+    var calendar = new FullCalendar.Calendar(calendarEl, {
+      initialView: "dayGridMonth",
+      firstDay: 1,   //Make Monday the first day of the week
+      events: "/calendar/events"
     });
-    </script>
-
-</body>
-</html>
+    calendar.render();
+});
+</script>
+{% endblock %}

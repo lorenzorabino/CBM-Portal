@@ -13,7 +13,38 @@
 			"command": "& ./scripts/run.ps1",
 			"isBackground": true,
 			"group": "build",
-			"dependsOn": ["Setup Python venv"]
+			"dependsOn": [
+				"Setup Python venv"
+			]
+		},
+		{
+			"label": "Install dependencies",
+			"type": "shell",
+			"command": "& ./scripts/setup.ps1",
+			"isBackground": false,
+			"problemMatcher": [
+				"$gcc"
+			],
+			"group": "build"
+		},
+		{
+			"label": "Install dependencies (lock+req)",
+			"type": "shell",
+			"command": "& ./scripts/setup.ps1",
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "Run migration (dry run tables)",
+			"type": "shell",
+			"command": "& ./scripts/migrate.ps1 -Sqlite \"./database/portal_demo3.db\" -BatchSize 200",
+			"isBackground": false
+		},
+		{
+			"label": "Alter CBM2 planner fields",
+			"type": "shell",
+			"command": "$env:MSSQL_CONN = if ($env:MSSQL_CONN) { $env:MSSQL_CONN } else { 'mssql+pyodbc://sa:pmdatascience@172.31.3.40,1433/CBM2?driver=ODBC+Driver+17+for+SQL+Server' }; .\\.venv\\Scripts\\python.exe .\\scripts\\alter_cbm2_add_planner_fields.py",
+			"group": "build"
 		}
 	]
 }
