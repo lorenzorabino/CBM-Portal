@@ -10,3 +10,4 @@ SQLAlchemy==1.4.54
 typing_extensions==4.14.1
 Werkzeug==2.0.3
 pyodbc==5.2.0
+python-dotenv==1.0.1
