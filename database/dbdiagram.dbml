@@ -1,0 +1,81 @@
+Table Equipment {
+  EquipmentID int [pk]
+  Department nvarchar(255)
+  Machine nvarchar(255)
+  Status nvarchar(50)
+}
+
+Table Planner {
+  id int [pk]
+  week_number int
+  year int
+  department nvarchar(255)
+  equipment nvarchar(255)
+  date nvarchar(50)
+  day nvarchar(20)
+  pm_date nvarchar(50)
+  schedule_type nvarchar(100)
+  proposed_target_date nvarchar(50)
+  tasks_count int
+  completed_count int
+}
+
+Table CBM_Technician {
+  CBM_ID int [pk]
+  Name nvarchar(255)
+  Expertise nvarchar(255)
+  Email nvarchar(255)
+}
+
+Table CBM_Testing {
+  Testing_ID int [pk]
+  CBM_Technician_ID int [ref: > CBM_Technician.CBM_ID]
+  Equipment_ID int [ref: > Equipment.EquipmentID]
+  Test_Date nvarchar(50)
+  Result nvarchar
+  planner_id int [ref: > Planner.id]
+  Test_Type nvarchar(255)
+  Done bit
+  Status nvarchar(100)
+  Alarm_Level nvarchar(100)
+  Notes nvarchar
+  Done_Tested_Date nvarchar(50)
+  // Denormalized planner_* fields (present in codebase, ensure via migration tools)
+  planner_week_number int
+  planner_year int
+  planner_department nvarchar(255)
+  planner_equipment nvarchar(255)
+  planner_pm_date nvarchar(50)
+  planner_schedule_type nvarchar(100)
+}
+
+Table CBM_Testing_Attachments {
+  id int [pk]
+  testing_id int [ref: > CBM_Testing.Testing_ID]
+  filename nvarchar(255)
+  path nvarchar(1024)
+  uploaded_at nvarchar(50)
+}
+
+Table Alarm_Level {
+  Alarm_ID int [pk]
+  Equipment_ID int [ref: > Equipment.EquipmentID]
+  Level nvarchar(100)
+  Message nvarchar(255)
+}
+
+Table Notifications {
+  Notification nvarchar(255)
+  Planner_ID int [ref: > Planner.id]
+  Testing_ID int [ref: > CBM_Testing.Testing_ID]
+  Test_Type nvarchar(255)
+  Planner_Department nvarchar(255)
+  Planner_Equipment nvarchar(255)
+}
+
+Table Users {
+  employee_number nvarchar(50) [pk]
+  name nvarchar(255)
+  password nvarchar(255)
+  user_type nvarchar(50)
+}

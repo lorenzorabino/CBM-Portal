@@ -44,7 +44,6 @@ class Equipment(db.Model):
 
 class MaintenanceSchedule(db.Model):
     __tablename__ = "maintenance_schedule"
-
     id = db.Column(db.Integer, primary_key=True)
     machine_id = db.Column(db.Integer, nullable=True)
     location_id = db.Column(db.Integer, nullable=True)
@@ -52,16 +51,12 @@ class MaintenanceSchedule(db.Model):
     resched_date = db.Column(db.DateTime, nullable=True)
     resched_count = db.Column(db.Integer, default=0)
 
-
 class Machine(db.Model):
     __tablename__ = "machines"
-
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String)
 
-
 class Location(db.Model):
     __tablename__ = "locations"
-
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String)

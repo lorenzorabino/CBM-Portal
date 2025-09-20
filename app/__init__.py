@@ -1,5 +1,8 @@
 from flask import Flask
+from flask import render_template
 from .models import db
+from flask import session
+from .nav_access import NAV_ACCESS
 from .routes import main
 from .technician_routes import technician
 from .calendar_routes import calendar_bp
@@ -44,5 +47,29 @@ def create_app():
     app.register_blueprint(main)
     app.register_blueprint(technician)
     app.register_blueprint(calendar_bp)
+
+    # Error handlers
+    @app.errorhandler(403)
+    def forbidden(_e):
+        return render_template('403.html'), 403
+
+    # Template helper: can_view('link_key') -> bool based on role
+    @app.context_processor
+    def inject_nav_helpers():
+        def can_view(key: str) -> bool:
+            try:
+                utype = None
+                u = session.get('user')
+                if isinstance(u, dict):
+                    utype = (u.get('user_type') or '').strip().lower()
+                if not utype:
+                    utype = (session.get('user_type') or '').strip().lower()
+                if not utype:
+                    utype = 'guest'
+                allowed = NAV_ACCESS.get(key, [])
+                return (utype in allowed) or ('guest' in allowed and utype == 'guest')
+            except Exception:
+                return False
+        return dict(can_view=can_view)
 
     return app

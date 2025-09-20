@@ -104,6 +104,10 @@
         </div>
       </nav>
       <div class="sb-bottom">
+        <a href="{{ url_for('main.index') }}" class="nav-item" title="SAP Notifications">
+          <span class="nav-icon">🏠</span>
+          <span class="nav-label">SAP Notifications</span>
+        </a>
         <a href="{{ url_for('main.index') }}" class="nav-item" title="Back to Dashboard">
           <span class="nav-icon">🏠</span>
           <span class="nav-label">Dashboard</span>
@@ -115,6 +119,7 @@
   <div class="app-shell">
   <main class="container tech-container">
   {% block content %}
+    {% set ro = read_only|default(false) %}
     <div style="margin-bottom:10px; display:flex; align-items:center; justify-content:space-between; gap:12px;">
       <h2 style="margin:0;">{{ page_title }}</h2>
       <div class="date-indicator" aria-hidden="true">
@@ -185,13 +190,14 @@
             <th class="text-center">Week #</th>
             <th class="text-left">Department</th>
             <th class="text-left">Equipment</th>
+            <th class="text-left">Test Type</th>
             <th class="text-center">PM Date</th>
             <th class="text-center">Scheduled Type</th>
             <th class="text-center">Done Tested Date</th>
             <th class="text-center">Status</th>
             <th class="text-center">Alarm Level</th>
             <th class="text-left">Notes</th>
-            <th class="text-center">Upload Features</th>
+            <th class="text-center">{% if ro %}View{% else %}Upload Features{% endif %}</th>
             <th class="text-left">Files</th>
           </tr>
         </thead>
@@ -202,6 +208,7 @@
             <td class="text-center">{{ t.week_number or '' }}</td>
             <td class="text-left">{{ t.department }}</td>
             <td class="text-left">{{ t.equipment }}</td>
+            <td class="text-left">{{ t.testing_type }}</td>
             <td class="text-center">{{ t.pm_date or '' }}</td>
             <td class="text-center">
               {% set sc = (t.schedule_type or '') %}
@@ -213,51 +220,78 @@
               {% endif %}
             </td>
             <td class="text-center">
-              <input type="date" name="done_tested_date" form="update-{{ t.id }}" value="{{ (t.done_tested_date or '')[:10] }}" />
+              {% if ro %}
+                {{ ((t.done_tested_date or '')[:10]) or '-' }}
+              {% else %}
+                <input type="date" name="done_tested_date" form="update-{{ t.id }}" value="{{ (t.done_tested_date or '')[:10] }}" />
+              {% endif %}
             </td>
             <td class="text-center">
               {% set s = (t.status or '') %}
-              <select name="status" form="update-{{ t.id }}">
-                <option value="Ongoing" {% if s|lower in ['ongoing','todo'] %}selected{% endif %}>Ongoing</option>
-                <option value="Completed" {% if s|lower in ['completed','done'] %}selected{% endif %}>Completed</option>
-                <option value="Ongoing Analysis" {% if s == 'Ongoing Analysis' %}selected{% endif %}>Ongoing Analysis</option>
-                <option value="For Revisit" {% if s == 'For Revisit' %}selected{% endif %}>For Revisit</option>
-                <option value="Sending Report" {% if s == 'Sending Report' %}selected{% endif %}>Sending Report</option>
-                <option value="Waived" {% if s == 'Waived' %}selected{% endif %}>Waived</option>
-              </select>
+              {% if ro %}
+                {{ s or '-' }}
+              {% else %}
+                <select name="status" form="update-{{ t.id }}">
+                  <option value="Ongoing" {% if s|lower in ['ongoing','todo'] %}selected{% endif %}>Ongoing</option>
+                  <option value="Completed" {% if s|lower in ['completed','done'] %}selected{% endif %}>Completed</option>
+                  <option value="Ongoing Analysis" {% if s == 'Ongoing Analysis' %}selected{% endif %}>Ongoing Analysis</option>
+                  <option value="For Revisit" {% if s == 'For Revisit' %}selected{% endif %}>For Revisit</option>
+                  <option value="Sending Report" {% if s == 'Sending Report' %}selected{% endif %}>Sending Report</option>
+                  <option value="Waived" {% if s == 'Waived' %}selected{% endif %}>Waived</option>
+                </select>
+              {% endif %}
             </td>
             <td class="text-center">
               {% set scl = (t.schedule_type or '')|lower %}
               {% if scl == 'validation' %}
                 {% set a = (t.alarm_level or 'Not Corrected') %}
-                <select name="alarm_level" form="update-{{ t.id }}">
-                  <option value="Not Corrected" {% if a == 'Not Corrected' %}selected{% endif %}>Not Corrected</option>
-                  <option value="Corrected" {% if a == 'Corrected' %}selected{% endif %}>Corrected</option>
-                </select>
+                {% if ro %}
+                  {{ a }}
+                {% else %}
+                  <select name="alarm_level" form="update-{{ t.id }}">
+                    <option value="Not Corrected" {% if a == 'Not Corrected' %}selected{% endif %}>Not Corrected</option>
+                    <option value="Corrected" {% if a == 'Corrected' %}selected{% endif %}>Corrected</option>
+                  </select>
+                {% endif %}
               {% else %}
                 {% set a = (t.alarm_level or 'Normal') %}
-                <select name="alarm_level" form="update-{{ t.id }}">
-                  <option value="Normal" {% if a == 'Normal' %}selected{% endif %}>Normal</option>
-                  <option value="Warning" {% if a == 'Warning' %}selected{% endif %}>Warning</option>
-                  <option value="Critical" {% if a == 'Critical' %}selected{% endif %}>Critical</option>
-                </select>
+                {% if ro %}
+                  {{ a }}
+                {% else %}
+                  <select name="alarm_level" form="update-{{ t.id }}">
+                    <option value="Normal" {% if a == 'Normal' %}selected{% endif %}>Normal</option>
+                    <option value="Warning" {% if a == 'Warning' %}selected{% endif %}>Warning</option>
+                    <option value="Critical" {% if a == 'Critical' %}selected{% endif %}>Critical</option>
+                  </select>
+                {% endif %}
               {% endif %}
             </td>
       <td class="text-left notes-cell" style="max-width:390px;white-space:nowrap;">
-              <form id="update-{{ t.id }}" class="inline" method="post" action="{{ url_for('technician.task_update', task_id=t.id) }}">
-                <input type="hidden" name="next" value="{{ request.full_path }}" />
-        <input type="text" name="notes" value="{{ t.notes or '' }}" placeholder="Remarks" style="width:260px;" />
-                <button class="btn" type="submit">Save</button>
-                {% if t.planner_id %}
-                  <a class="btn" href="{{ url_for('main.planner_tasks', planner_id=t.planner_id) }}" target="_blank" rel="noopener">View</a>
-                {% endif %}
-              </form>
+              {% if ro %}
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <div title="Remarks" style="max-width:260px; overflow:hidden; text-overflow:ellipsis;">{{ t.notes or '' }}</div>
+                </div>
+              {% else %}
+                <form id="update-{{ t.id }}" class="inline" method="post" action="{{ url_for('technician.task_update', task_id=t.id) }}">
+                  <input type="hidden" name="next" value="{{ request.full_path }}" />
+                  <input type="text" name="notes" value="{{ t.notes or '' }}" placeholder="Remarks" style="width:260px;" />
+                  <button class="btn" type="submit">Save</button>
+                </form>
+              {% endif %}
             </td>
             <td class="text-center">
-              <form class="inline" method="post" enctype="multipart/form-data" action="{{ url_for('technician.upload_attachments', task_id=t.id) }}">
-                <input type="file" name="files" multiple />
-                <button class="btn" type="submit">Upload</button>
-              </form>
+              {% if ro %}
+                {% if t.planner_id %}
+                  <a class="btn" href="{{ url_for('main.planner_tasks', planner_id=t.planner_id) }}" target="_blank" rel="noopener">View</a>
+                {% else %}
+                  -
+                {% endif %}
+              {% else %}
+                <form class="inline" method="post" enctype="multipart/form-data" action="{{ url_for('technician.upload_attachments', task_id=t.id) }}">
+                  <input type="file" name="files" multiple />
+                  <button class="btn" type="submit">Upload</button>
+                </form>
+              {% endif %}
             </td>
             <td class="text-left" style="white-space:normal; max-width:300px;">
               {% if t.attachments and t.attachments|length > 0 %}
@@ -265,9 +299,11 @@
                   {% for f in t.attachments %}
                     <li style="display:flex; align-items:center; gap:6px; margin:2px 0;">
                       <a href="{{ url_for('technician.view_attachment', attachment_id=f.id) }}" target="_blank" rel="noopener" title="Open" style="display:inline-block; max-width: 220px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color:#555;">{{ f.filename }}</a>
-                      <form method="post" action="{{ url_for('technician.delete_attachment', attachment_id=f.id) }}" onsubmit="return confirm('Delete this file?')">
-                        <button class="btn" type="submit" title="Delete">✕</button>
-                      </form>
+                      {% if not ro %}
+                        <form method="post" action="{{ url_for('technician.delete_attachment', attachment_id=f.id) }}" onsubmit="return confirm('Delete this file?')">
+                          <button class="btn" type="submit" title="Delete">✕</button>
+                        </form>
+                      {% endif %}
                     </li>
                   {% endfor %}
                 </ul>
@@ -314,9 +350,57 @@
         setTimeout(() => {
           div.classList.remove('show');
           setTimeout(() => div.remove(), 200);
-        }, 1000);
+        }, 5000);
       }
       msgs.forEach(x => showToast(x.m, x.c));
+    })();
+
+    // Client-side guard: require Done Tested Date when Status=Completed
+    (function() {
+      function ensureDoneDate(e) {
+        try {
+          const form = e.target.closest('form');
+          if (!form) return;
+          const statusSel = form.querySelector('select[name="status"]');
+          const dateInput = form.querySelector('input[name="done_tested_date"]');
+          if (!statusSel || !dateInput) return;
+          const st = (statusSel.value || '').toLowerCase();
+          const dtd = (dateInput.value || '').trim();
+          if ((st === 'completed' || st === 'done') && dtd === '') {
+            e.preventDefault();
+            // Simple modal-like alert
+            const overlay = document.createElement('div');
+            overlay.style.position = 'fixed';
+            overlay.style.inset = '0';
+            overlay.style.background = 'rgba(0,0,0,0.35)';
+            overlay.style.display = 'flex';
+            overlay.style.alignItems = 'center';
+            overlay.style.justifyContent = 'center';
+            overlay.style.zIndex = '2000';
+            const box = document.createElement('div');
+            box.style.background = '#fff';
+            box.style.padding = '16px';
+            box.style.borderRadius = '8px';
+            box.style.width = 'min(520px, 92vw)';
+            box.innerHTML = '<h3 style="margin:0 0 8px;">Missing Done Tested Date</h3>' +
+                            '<p style="margin:0 0 12px;">Please set the Done Tested Date before saving a Completed status.</p>' +
+                            '<div style="display:flex; justify-content:flex-end; gap:8px;"><button id="modal-ok" class="btn btn-primary" type="button">OK</button></div>';
+            overlay.appendChild(box);
+            document.body.appendChild(overlay);
+            // Focus the date input after dismiss
+            const close = () => { overlay.remove(); dateInput.focus(); };
+            box.querySelector('#modal-ok').addEventListener('click', close);
+            overlay.addEventListener('click', (ev) => { if (ev.target === overlay) close(); });
+          }
+        } catch (_) { /* ignore */ }
+      }
+      // Delegate submit on all per-row update forms whose id starts with update-
+      document.addEventListener('submit', function(e) {
+        const f = e.target;
+        if (f && f.id && f.id.startsWith('update-')) {
+          ensureDoneDate(e);
+        }
+      }, true);
     })();
   </script>
 </body>

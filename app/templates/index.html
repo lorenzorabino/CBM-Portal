@@ -9,13 +9,18 @@
             <div class="kpi-toolbar-row" style="align-items:center; justify-content: space-between; margin-top:6px; gap:12px;">
                 <div style="display:flex; gap:8px; align-items:center;">
                     <div class="segmented" role="tablist" aria-label="KPI scope">
-                        <button class="seg-item is-active" role="tab" aria-selected="true" data-scope="weekly">This Week</button>
-                        <button class="seg-item" role="tab" aria-selected="false" data-scope="pm_week">PM Week</button>
-                        <button class="seg-item" role="tab" aria-selected="false" data-scope="all">All-time</button>
+                        <button class="seg-item {{ 'is-active' if (scope or 'weekly') == 'weekly' else '' }}" role="tab" aria-selected="{{ 'true' if (scope or 'weekly') == 'weekly' else 'false' }}" data-scope="weekly">This Week</button>
+                        <button class="seg-item {{ 'is-active' if (scope or '') == 'pm_week' else '' }}" role="tab" aria-selected="{{ 'true' if (scope or '') == 'pm_week' else 'false' }}" data-scope="pm_week">PM Week</button>
+                        <button class="seg-item {{ 'is-active' if (scope or '') == 'month' else '' }}" role="tab" aria-selected="{{ 'true' if (scope or '') == 'month' else 'false' }}" data-scope="month">Month</button>
+                        <button class="seg-item {{ 'is-active' if (scope or '') in ['all','all-time','alltime','overall','total'] else '' }}" role="tab" aria-selected="{{ 'true' if (scope or '') in ['all','all-time','alltime','overall','total'] else 'false' }}" data-scope="all">All-time</button>
                     </div>
                     <label for="kpi-week-picker" style="font-size:.9rem; color:#003785; display:flex; gap:8px; align-items:center;">
                         <span style="font-size:.85rem; color:#003785;">Week</span>
                         <input id="kpi-week-picker" type="week" class="input" style="width:auto; min-width:140px;" value="{{ sel_year }}-W{{ '%02d' % sel_week }}" />
+                    </label>
+                    <label for="kpi-month-picker" style="font-size:.9rem; color:#003785; display:none; gap:8px; align-items:center;">
+                        <span style="font-size:.85rem; color:#003785;">Month</span>
+                        <input id="kpi-month-picker" type="month" class="input" style="width:auto; min-width:140px;" value="{{ '%04d-%02d'|format(sel_year, (sel_month or 1)) }}" />
                     </label>
                 </div>
                 <div style="display:flex; align-items:center; gap:12px;">
@@ -36,7 +41,7 @@
                 </div>
             </div>
 
-            <section id="kpi-cards" data-scope="weekly" data-week="{{ sel_week }}" data-year="{{ sel_year }}" style="margin-top:12px;">
+            <section id="kpi-cards" data-scope="{{ scope or 'weekly' }}" data-week="{{ sel_week }}" data-year="{{ sel_year }}" data-month="{{ sel_month or '' }}" style="margin-top:12px;">
                 {% set k = kpi_counts %}
                 <div class="panel kpi-card kpi-total js-kpi" data-kpi="total" title="View details">
                     <div class="card-title">Total</div>
@@ -97,21 +102,29 @@
                                         <div class="eq-meta">{{ e.department or '' }}{% if e.pm_date %} • PM: {{ e.pm_date }}{% endif %}</div>
                                     </div>
                                     <div class="eq-body">
-                                        <div class="progress eq-progress" title="{{ pct }}%">
-                                            <div class="progress-inner" data-pct="{{ pct }}"></div>
-                                        </div>
-                                        <div class="eq-stats">{{ e.completed_count }}/{{ e.total_tests }} tests</div>
+                                        <!-- Progress bar and count removed as requested -->
                                     </div>
                                     <div class="eq-actions">
-                                        <a class="btn-secondary" href="{{ url_for('main.equipment') }}?equipment_id={{ e.id }}">Open</a>
+                                        <a class="btn-secondary" href="{{ url_for('main.equipment_v3') }}?eqid={{ e.id }}">Open</a>
                                     </div>
                                 </article>
                             {% endfor %}
-                        {% else %}
-                            <div style="color:#666; padding:12px;">No equipment scheduled this week.</div>
                         {% endif %}
                                             </div>
                                         </div>
+                    <!-- Progress legend -->
+                    <div class="progress-legend" aria-label="Progress legend" style="display:flex; align-items:center; gap:8px; font-size:.9rem; color:#4b5563; margin-top:8px; flex-wrap:wrap;">
+                        <span style="font-weight:600; color:#374151;">Legend:</span>
+                        <span class="test-chip is-done" title="All required tests completed">
+                            <i class="dot"></i>
+                            <span class="name">Done</span>
+                        </span>
+                        <span class="test-chip is-pending" title="Some or all tests pending">
+                            <i class="dot"></i>
+                            <span class="name">Pending</span>
+                        </span>
+                    </div>
+
                     <!-- Keep original table for compatibility/fallback -->
                     <div style="overflow:auto; margin-top:12px;">
                         <table class="planner-table no-wrap" style="min-width:980px;">
@@ -124,7 +137,6 @@
                                     <th>Schedule</th>
                                     <th>Progress</th>
                                     <th>Worst Alarm</th>
-                                    <th>Done Date(s)</th>
                                     <th>Open</th>
                                 </tr>
                             </thead>
@@ -141,8 +153,17 @@
                                         <span class="{{ 'schedule-planned' if sc=='planned' else ('schedule-unplanned' if sc=='unplanned' else ('schedule-validation' if sc=='validation' else '')) }}">{{ r.schedule_type or '-' }}</span>
                                     </td>
                                     <td>
-                                        <div class="progress"><div class="progress-inner" data-pct="{{ pct }}"></div></div>
-                                        <div style="font-size:.85rem; color:#555;">{{ r.completed_count }}/{{ r.total_tests }}</div>
+                                        {% if r.tests_breakdown and r.tests_breakdown|length > 0 %}
+                                        <div class="test-chips" style="display:flex; flex-wrap:wrap; gap:6px; margin-top:6px;">
+                                            {% for t in r.tests_breakdown %}
+                                                <span class="test-chip {{ 'is-done' if t.done else 'is-pending' }}" title="{{ t.name }}: {{ t.done_count }}/{{ t.total }} done">
+                                                    <i class="dot"></i>
+                                                    <span class="name">{{ t.name }}</span>
+                                                    <span class="counts">{{ t.done_count }}/{{ t.total }}</span>
+                                                </span>
+                                            {% endfor %}
+                                        </div>
+                                        {% endif %}
                                     </td>
                                     <td>
                                         {% if r.worst_alarm %}
@@ -151,11 +172,10 @@
                                             -
                                         {% endif %}
                                     </td>
-                                    <td>{{ r.done_date_count }}</td>
                                     <td><a class="btn-secondary" href="{{ url_for('main.planner_tasks', planner_id=r.id) }}">View</a></td>
                                 </tr>
                                 {% else %}
-                                <tr><td colspan="9" style="text-align:center; color:#666;">No rows</td></tr>
+                                <tr><td colspan="8" style="text-align:center; color:#666;">No rows</td></tr>
                                 {% endfor %}
                             </tbody>
                         </table>

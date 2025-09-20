@@ -1,9 +1,10 @@
 from flask import Blueprint, render_template, request
 from .models import db, AlarmLevel, CBMTechnician, CBMTesting, Equipment
 
-main = Blueprint('main', __name__)
+# Legacy routes file (not registered). Use a distinct blueprint name to avoid collisions if imported.
+legacy = Blueprint('legacy', __name__)
 
-@main.route('/')
+@legacy.route('/')
 def index():
     alarms = AlarmLevel.query.all()
     technicians = CBMTechnician.query.all()
@@ -11,7 +12,7 @@ def index():
     equipments = Equipment.query.all()
     return render_template('index.html', alarms=alarms, technicians=technicians, testings=testings, equipments=equipments)
 
-@main.route('/technicians')
+@legacy.route('/technicians')
 def technicians():
     search = request.args.get('search', '')
     sort = request.args.get('sort', 'Name')
@@ -28,7 +29,7 @@ def technicians():
     technicians = query.all()
     return render_template('technicians.html', technicians=technicians, search=search, sort=sort, direction=direction)
 
-@main.route('/equipment')
+@legacy.route('/equipment')
 def equipment():
     search = request.args.get('search', '')
     query = Equipment.query
@@ -42,7 +43,7 @@ def equipment():
 
 from flask import redirect, url_for, flash
 
-@main.route('/add_equipment', methods=['GET', 'POST'])
+@legacy.route('/add_equipment', methods=['GET', 'POST'])
 def add_equipment():
     if request.method == 'POST':
         name = request.form.get('name')
@@ -58,7 +59,7 @@ def add_equipment():
             flash('Please fill all fields.', 'error')
     return render_template('add_equipment.html')
 
-@main.route('/add_testing', methods=['GET', 'POST'])
+@legacy.route('/add_testing', methods=['GET', 'POST'])
 def add_testing():
     technicians = CBMTechnician.query.all()
     equipments = Equipment.query.all()
@@ -82,7 +83,7 @@ def add_testing():
             flash('Please fill all fields.', 'error')
     return render_template('add_testing.html', technicians=technicians, equipments=equipments)
 
-@main.route('/testing_records')
+@legacy.route('/testing_records')
 def testing_records():
     technician_id = request.args.get('technician', '')
     equipment_id = request.args.get('equipment', '')
@@ -96,13 +97,13 @@ def testing_records():
     records = query.all()
     return render_template('testing_records.html', records=records, technicians=technicians, equipments=equipments, technician_id=technician_id, equipment_id=equipment_id)
 
-@main.route('/alarms')
+@legacy.route('/alarms')
 def alarms():
     alarms = AlarmLevel.query.all()
     return render_template('alarms.html', alarms=alarms)
 
 
-@main.route('/planner', methods=['GET', 'POST'])
+@legacy.route('/planner', methods=['GET', 'POST'])
 def weekly_equipment_pm_planner():
     from flask import request, redirect, url_for, flash
     from sqlalchemy import text
@@ -250,7 +251,7 @@ def weekly_equipment_pm_planner():
     )
 
 
-@main.route('/planner_entries', methods=['GET'])
+@legacy.route('/planner_entries', methods=['GET'])
 def planner_entries():
     from sqlalchemy import text
     from app.models import db

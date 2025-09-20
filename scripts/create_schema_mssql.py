@@ -44,7 +44,6 @@ DDL_STATEMENTS = [
                 pm_date NVARCHAR(50) NULL,
                 schedule_type NVARCHAR(100) NULL,
                 proposed_target_date NVARCHAR(50) NULL,
-                notification BIGINT NULL,
                 tasks_count INT NULL,
                 completed_count INT NULL
             );

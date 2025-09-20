@@ -33,16 +33,20 @@
               </span>
               <span class="nav-label">CBM Schedule</span>
             </a>
-            <a href="/notification" class="nav-item {% if request.path == '/notification' %}is-active{% endif %}" title="Notifications">
+            <a href="/notification_for" class="nav-item {% if request.path == '/notification_for' %}is-active{% endif %}" title="For SAP Notifications">
               <span class="nav-icon" aria-hidden="true">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 17h5l-1.405-1.405A2.032 2.032 0 0 1 18 14.158V11a6 6 0 1 0-12 0v3.159c0 .538-.214 1.055-.595 1.436L4 17h5"></path></svg>
               </span>
-              <span class="nav-label">SAP Notifications</span>
+              <span class="nav-label">For SAP Notification</span>
             </a>
           </div>
         </nav>
 
         <div class="sb-bottom">
+          <a href="{{ url_for('main.notification') }}" class="nav-item" title="SAP Notifications">
+            <img src="{{ url_for('static', filename='icons/SAP.png') }}" class="icon-img default-icon">
+            <img src="{{ url_for('static', filename='icons/SAP.png') }}" class="icon-img active-icon"></span>
+            <span class="nav-label">CBM•SAP Notifications</span> </a>
           <a href="{{ url_for('main.index') }}" class="nav-item" title="Back to Dashboard">
             <span class="nav-icon">🏠</span>
             <span class="nav-label">Dashboard</span>
@@ -63,6 +67,27 @@
         var appShell = document.querySelector('.app-shell');
         if(globalSidebar) globalSidebar.classList.add('planner-hidden');
         if(appShell) appShell.classList.add('app-shell--planner');
+        // Planner sidebar collapse handling
+        try {
+          var pSidebar = document.querySelector('.planner-sidebar');
+          var pShell = document.querySelector('.planner-shell');
+          var btn = document.getElementById('sbCollapsePlanner');
+          if (pSidebar && pShell && btn) {
+            var apply = function(collapsed){
+              pSidebar.classList.toggle('is-collapsed', !!collapsed);
+              pShell.classList.toggle('planner-collapsed', !!collapsed);
+            };
+            // restore persisted state
+            var stored = null;
+            try { stored = localStorage.getItem('cbm:planner-sb-collapsed'); } catch(_) {}
+            apply(stored === '1');
+            btn.addEventListener('click', function(){
+              var isCollapsed = pSidebar.classList.toggle('is-collapsed');
+              pShell.classList.toggle('planner-collapsed', isCollapsed);
+              try { localStorage.setItem('cbm:planner-sb-collapsed', isCollapsed ? '1' : '0'); } catch(_) {}
+            });
+          }
+        } catch(_) {}
         // restore when navigating away (optional)
         window.addEventListener('beforeunload', function(){ if(globalSidebar) globalSidebar.classList.remove('planner-hidden'); if(appShell) appShell.classList.remove('app-shell--planner'); });
       });

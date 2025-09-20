@@ -109,6 +109,7 @@ body {
 
 /* Content area when planner sidebar present */
 .planner-shell{ margin-left: 300px; padding:18px; }
+.planner-shell.planner-collapsed{ margin-left:84px; }
 
 @media (max-width:900px){
   .planner-sidebar{ position: fixed; width:84px; }

@@ -64,11 +64,14 @@ function initSidebar(){
         // Restore state
         const stored = localStorage.getItem('cbm:sb-collapsed');
         apply(stored === '1');
-        btn.addEventListener('click', ()=>{
-            const isCollapsed = sidebar.classList.toggle('is-collapsed');
-            shell.classList.toggle('sb-collapsed', isCollapsed);
-            try{ localStorage.setItem('cbm:sb-collapsed', isCollapsed ? '1' : '0'); }catch(_){ }
-        });
+        // Avoid double-binding if base.html already wires the click
+        if (btn.getAttribute('data-cbm-bound') !== '1') {
+            btn.addEventListener('click', ()=>{
+                const isCollapsed = sidebar.classList.toggle('is-collapsed');
+                shell.classList.toggle('sb-collapsed', isCollapsed);
+                try{ localStorage.setItem('cbm:sb-collapsed', isCollapsed ? '1' : '0'); }catch(_){ }
+            });
+        }
         // Active link highlight (match pathname) - choose the best (longest) matching href
         const items = Array.from(sidebar.querySelectorAll('.nav-item'));
         const rawPath = window.location.pathname || '';
@@ -128,13 +131,18 @@ function populateDateIndicator(){
     const elDay = document.getElementById('date-indicator-day');
     const elWeek = document.getElementById('date-indicator-week');
     const wkPicker = document.getElementById('kpi-week-picker');
+    const pmWeekEl = document.getElementById('pm-week-indicator');
     // If server provided a selected PM date, prefer it for the KPI indicator
-    const pmFromServer = (document.getElementById('kpi-date-indicator') || {}).dataset ? (document.getElementById('kpi-date-indicator').dataset.pmDate || '') : '';
+    const dateWrap = document.getElementById('kpi-date-indicator');
+    const pmFromServer = dateWrap && dateWrap.dataset ? (dateWrap.dataset.pmDate || '') : '';
+    const pmWeekFromServer = dateWrap && dateWrap.dataset ? (dateWrap.dataset.pmWeek || '') : '';
+    const pmYearFromServer = dateWrap && dateWrap.dataset ? (dateWrap.dataset.pmYear || '') : '';
     let now = new Date();
     if (pmFromServer) {
         try {
             // pmFromServer is ISO-like; use only date part
-            now = new Date();
+            const ds = String(pmFromServer).slice(0,10);
+            now = new Date(ds + 'T00:00:00');
             if (isNaN(now.getTime())) now = new Date();
         } catch (_) { now = new Date(); }
     }
@@ -149,6 +157,21 @@ function populateDateIndicator(){
     // Keep week picker in sync if present
     if (wkPicker && !wkPicker.value) {
         wkPicker.value = `${y}-W${pad(w)}`;
+    }
+    // Fill PM Week indicator (prefer server-provided pm week/year; else compute from pm date if available)
+    if (pmWeekEl) {
+        let pmLabel = '';
+        if (pmWeekFromServer && pmYearFromServer) {
+            pmLabel = `PM Week: W${pad(parseInt(pmWeekFromServer,10))} ${pmYearFromServer}`;
+        } else if (pmFromServer) {
+            try {
+                const ds = String(pmFromServer).slice(0,10);
+                const pmd = new Date(ds + 'T00:00:00');
+                const [py, pw] = isoWeekAndYear(pmd);
+                pmLabel = `PM Week: W${pad(pw)} ${py}`;
+            } catch (_) { pmLabel = ''; }
+        }
+        pmWeekEl.textContent = pmLabel;
     }
     // Also update kpi-cards data-week/year if not set
     const kcards = document.getElementById('kpi-cards');
@@ -168,6 +191,11 @@ function populateDateIndicator(){
                 const ww = parseInt(parts[1],10);
                 // Update only the week indicator; do NOT touch elDate/elDay which should remain as today
                 if (elWeek) elWeek.textContent = `W${pad(ww)} ${yy}`;
+                // If PM Week was not server-provided, keep it in sync with selected week when scope uses PM week
+                // We won't override a server-provided PM week/year label.
+                if (pmWeekEl && !(pmWeekFromServer && pmYearFromServer)) {
+                    pmWeekEl.textContent = `PM Week: W${pad(ww)} ${yy}`;
+                }
             }
         });
     }
@@ -710,6 +738,7 @@ function initKpiScopeToggle() {
     const updateHint = (scope) => {
     if (!scopeHint) return;
     if (scope === 'all') scopeHint.textContent = 'Showing all-time totals | Current Date:';
+    else if (scope === 'month') scopeHint.textContent = 'Showing monthly totals | Month:';
     else if (scope === 'pm_week') scopeHint.textContent = 'Showing PM week totals | PM Date:';
     else scopeHint.textContent = 'Current Date:';
     };
@@ -762,10 +791,18 @@ function initKpiScopeToggle() {
     };
 
     const fetchCounts = (scope) => {
-        const w = container.getAttribute('data-week');
         const y = container.getAttribute('data-year');
-        const qp = (scope === 'all') ? 'scope=all' : `scope=weekly&week=${encodeURIComponent(w)}&year=${encodeURIComponent(y)}`;
-        return fetch('/api/dashboard/kpi_counts?' + qp).then(r => r.json());
+        if (scope === 'all') {
+            return fetch('/api/dashboard/kpi_counts?scope=all').then(r => r.json());
+        } else if (scope === 'month') {
+            const m = container.getAttribute('data-month');
+            const qp = `scope=month&month=${encodeURIComponent(m)}&year=${encodeURIComponent(y)}`;
+            return fetch('/api/dashboard/kpi_counts?' + qp).then(r => r.json());
+        } else {
+            const w = container.getAttribute('data-week');
+            const qp = `scope=weekly&week=${encodeURIComponent(w)}&year=${encodeURIComponent(y)}`;
+            return fetch('/api/dashboard/kpi_counts?' + qp).then(r => r.json());
+        }
     };
 
     const onClick = (e) => {
@@ -774,11 +811,11 @@ function initKpiScopeToggle() {
         setActive(btn);
         container.setAttribute('data-scope', scope);
         updateHint(scope);
-        // Show/hide week picker
-        const weekPickerWrap = document.getElementById('kpi-week-picker');
-        if (weekPickerWrap) {
-            weekPickerWrap.closest('label').style.display = (scope === 'all') ? 'none' : 'inline-flex';
-        }
+        // Show/hide pickers
+        const weekInputEl = document.getElementById('kpi-week-picker');
+        const monthInputEl = document.getElementById('kpi-month-picker');
+        if (weekInputEl) weekInputEl.closest('label').style.display = (scope === 'weekly' || scope === 'pm_week') ? 'inline-flex' : 'none';
+        if (monthInputEl) monthInputEl.closest('label').style.display = (scope === 'month') ? 'inline-flex' : 'none';
         fetchCounts(scope).then(updateCounts).catch(() => {});
         // For 'all' do an online (AJAX) only update and avoid full-page navigation.
         if (scope === 'all') {
@@ -798,6 +835,10 @@ function initKpiScopeToggle() {
                 if (pmw && pmy) {
                     params.set('pm_week', String(parseInt(pmw, 10)));
                     params.set('pm_year', String(parseInt(pmy, 10)));
+                    // Ensure mutual exclusivity with other scopes
+                    params.delete('week');
+                    params.delete('month');
+                    params.delete('year');
                 } else {
                     // fallback: compute ISO week/year from server-provided pm_date (older behavior)
                     const pm = attrs.pmDate || '';
@@ -812,9 +853,32 @@ function initKpiScopeToggle() {
                             const week = 1 + Math.round(((target - firstThursday) / 86400000 - 3 + (firstThursday.getUTCDay() + 6) % 7) / 7);
                             params.set('pm_year', String(year));
                             params.set('pm_week', String(week));
+                            // Ensure mutual exclusivity with other scopes
+                            params.delete('week');
+                            params.delete('month');
+                            params.delete('year');
                         } catch (err) { }
                     }
                 }
+            } else if (scope === 'month') {
+                params.set('scope', 'month');
+                const monthInput = document.getElementById('kpi-month-picker');
+                if (monthInput && monthInput.value) {
+                    const parts = (monthInput.value || '').split('-'); // YYYY-MM
+                    if (parts.length >= 2) {
+                        params.set('year', parts[0]);
+                        params.set('month', String(parseInt(parts[1], 10)));
+                    }
+                } else {
+                    // fallback from container dataset
+                    const m = container.getAttribute('data-month');
+                    const y = container.getAttribute('data-year');
+                    if (m && y) { params.set('month', m); params.set('year', y); }
+                }
+                // Ensure mutual exclusivity
+                params.delete('week');
+                params.delete('pm_week');
+                params.delete('pm_year');
             } else {
                 params.set('scope', 'weekly');
                 const weekInput = document.getElementById('kpi-week-picker');
@@ -827,6 +891,9 @@ function initKpiScopeToggle() {
                 }
                 params.delete('pm_week');
                 params.delete('pm_year');
+                params.delete('month');
+                // Ensure mutual exclusivity
+                params.delete('month');
             }
             cur.search = params.toString();
             if (cur.toString() !== window.location.href) window.location.href = cur.toString();
@@ -862,6 +929,9 @@ function initKpiScopeToggle() {
                         const params = new URLSearchParams(cur.search);
                         params.set('week', String(w));
                         params.set('year', String(y));
+                        params.delete('month');
+                        params.delete('pm_week');
+                        params.delete('pm_year');
                         // Only navigate if something would change
                         if (cur.search !== '?' + params.toString()) {
                             cur.search = params.toString();
@@ -874,9 +944,68 @@ function initKpiScopeToggle() {
                 }
             }
         });
-        // Initialize visibility based on current scope
+    }
+
+    // Month picker wiring
+    const monthInput = document.getElementById('kpi-month-picker');
+    if (monthInput) {
+        monthInput.addEventListener('change', (ev) => {
+            const v = (ev.target.value || '').trim(); // format YYYY-MM
+            if (!v) return;
+            const parts = v.split('-');
+            if (parts.length >= 2) {
+                const y = parts[0];
+                const m = String(parseInt(parts[1], 10));
+                container.setAttribute('data-month', m);
+                container.setAttribute('data-year', y);
+                const active = buttons.find(b => b.classList.contains('is-active'));
+                const scope = active && active.getAttribute('data-scope') || 'weekly';
+                if (scope === 'month') {
+                    fetchCounts('month').then(updateCounts).catch(() => {});
+                    try {
+                        const cur = new URL(window.location.href);
+                        const params = new URLSearchParams(cur.search);
+                        params.set('month', String(m));
+                        params.set('year', String(y));
+                        params.set('scope', 'month');
+                        params.delete('week');
+                        params.delete('pm_week');
+                        params.delete('pm_year');
+                        if (cur.search !== '?' + params.toString()) {
+                            cur.search = params.toString();
+                            window.location.href = cur.toString();
+                        }
+                    } catch (e) {
+                        window.location.search = `scope=month&month=${encodeURIComponent(m)}&year=${encodeURIComponent(y)}`;
+                    }
+                }
+            }
+        });
+    }
+
+    // Initialize visibility based on current scope
+    {
         const curScope = container.getAttribute('data-scope') || 'weekly';
-        weekInput.closest('label').style.display = (curScope === 'all') ? 'none' : 'inline-flex';
+        const weekEl = document.getElementById('kpi-week-picker');
+        const monthEl = document.getElementById('kpi-month-picker');
+        if (weekEl) weekEl.closest('label').style.display = (curScope === 'weekly' || curScope === 'pm_week') ? 'inline-flex' : 'none';
+        if (monthEl) monthEl.closest('label').style.display = (curScope === 'month') ? 'inline-flex' : 'none';
+    }
+
+    // Initialize segmented active state and picker visibility from container data-scope
+    {
+        const curScope = (container.getAttribute('data-scope') || 'weekly').toLowerCase();
+        const btn = buttons.find(b => (b.getAttribute('data-scope') || '').toLowerCase() === curScope);
+        if (btn) setActive(btn);
+        updateHint(curScope);
+        const weekEl = document.getElementById('kpi-week-picker');
+        const monthEl = document.getElementById('kpi-month-picker');
+        if (weekEl) weekEl.closest('label').style.display = (curScope === 'weekly' || curScope === 'pm_week') ? 'inline-flex' : 'none';
+        if (monthEl) monthEl.closest('label').style.display = (curScope === 'month') ? 'inline-flex' : 'none';
+        // If not weekly, fetch counts to reflect selected scope immediately
+        if (curScope !== 'weekly') {
+            fetchCounts(curScope).then(updateCounts).catch(() => {});
+        }
     }
 }
 

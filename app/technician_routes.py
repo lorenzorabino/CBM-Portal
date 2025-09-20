@@ -1,7 +1,8 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash, current_app, send_from_directory, abort
+from flask import Blueprint, render_template, request, redirect, url_for, flash, current_app, send_from_directory, abort, session
 from sqlalchemy import text
 from .models import db
 from werkzeug.utils import secure_filename
+from .auth import role_required
 import os
 from datetime import datetime
 import mimetypes
@@ -135,7 +136,13 @@ def _fetch_tasks_for_slug(conn, slug: str, filters: dict | None = None):
         "  ORDER BY p2.id DESC",
         ") rp",
         # In SQL Server, TEXT/NTEXT cannot be passed to LOWER/TRIM; CAST to NVARCHAR(MAX)
-        f"WHERE LTRIM(RTRIM(LOWER(CAST(t.Test_Type AS NVARCHAR(MAX))))) IN ({inlist})"
+        f"WHERE LTRIM(RTRIM(LOWER(CAST(t.Test_Type AS NVARCHAR(MAX))))) IN ({inlist})",
+        # Exclude tests that already have a Notification recorded for this Testing_ID
+        "AND NOT EXISTS (",
+        "  SELECT 1 FROM dbo.Notifications n",
+        "  WHERE n.Testing_ID = t.Testing_ID",
+        "    AND NULLIF(LTRIM(RTRIM(CAST(n.Notification AS NVARCHAR(MAX)))), '') IS NOT NULL",
+        ")",
     ]
     # optional filters
     if filters:
@@ -252,47 +259,56 @@ def _render_type_page(slug: str, template_name: str):
 
 
 @technician.route('/vibration')
+@role_required('technician', 'admin')
 def technician_vibration():
     return _render_type_page('vibration', 'technician/vibration.html')
 
 
 @technician.route('/oil')
+@role_required('technician', 'admin')
 def technician_oil():
     return _render_type_page('oil', 'technician/oil.html')
 
 
 @technician.route('/thermal')
+@role_required('technician', 'admin')
 def technician_thermal():
     return _render_type_page('thermal', 'technician/thermal.html')
 
 
 @technician.route('/ultrasonic')
+@role_required('technician', 'admin')
 def technician_ultrasonic():
     return _render_type_page('ultrasonic', 'technician/ultrasonic.html')
 
 
 @technician.route('/motor_dynamic')
+@role_required('technician', 'admin')
 def technician_motor_dynamic():
     return _render_type_page('motor_dynamic', 'technician/motor_dynamic.html')
 
 
 @technician.route('/leak_detection')
+@role_required('technician', 'admin')
 def technician_leak_detection():
     return _render_type_page('leak_detection', 'technician/leak_detection.html')
 
 
 @technician.route('/balancing')
+@role_required('technician', 'admin')
 def technician_balancing():
     return _render_type_page('balancing', 'technician/balancing.html')
 
 
 @technician.route('/other')
+@role_required('technician', 'admin')
 def technician_other():
     return _render_type_page('other', 'technician/other.html')
 
 
 # Dynamic category route used by planner_entries links
 @technician.route('/category/<category>')
+@role_required('technician', 'admin')
 def by_category(category: str):
     # Only allow known categories
     if category not in _TEST_TYPE_LABELS:
@@ -301,44 +317,127 @@ def by_category(category: str):
 
 
 @technician.route('/')
+@role_required('technician', 'admin')
 def dashboard():
-    status = request.args.get('status')
-    planner_id = request.args.get('planner_id')
-    ttype = request.args.get('type')
+    # Align dashboard styling/context with per-type pages
+    # Collect filters similar to _render_type_page (optional for dashboard)
+    f = {
+        'planner_id': (request.args.get('planner_id') or '').strip() or None,
+        'week_number': (request.args.get('week_number') or '').strip() or None,
+        'department': (request.args.get('department') or '').strip() or None,
+        'equipment': (request.args.get('equipment') or '').strip() or None,
+        'pm_date': (request.args.get('pm_date') or '').strip() or None,
+        'schedule_type': (request.args.get('schedule_type') or '').strip() or None,
+        'status': (request.args.get('status') or '').strip() or None,
+        'alarm_level': (request.args.get('alarm_level') or '').strip() or None,
+    }
     with db.engine.begin() as conn:
         _ensure_schema(conn)
+        # Fetch a recent slice of all CBM_Testing to show overview
         base = (
             "SELECT t.Testing_ID, t.Test_Type, t.Status, t.Done, t.Alarm_Level, t.Notes, t.Done_Tested_Date, t.planner_id, "
             "COALESCE(p.department, t.planner_department) AS department, "
             "COALESCE(p.equipment, t.planner_equipment) AS equipment, "
             "COALESCE(p.week_number, t.planner_week_number) AS week_number, "
-            "COALESCE(p.year, t.planner_year) AS year "
+            "COALESCE(p.year, t.planner_year) AS year, "
+            "COALESCE(p.pm_date, t.planner_pm_date) AS pm_date, "
+            "COALESCE(p.schedule_type, t.planner_schedule_type) AS schedule_type "
             "FROM CBM_Testing t LEFT JOIN Planner p ON p.id = t.planner_id"
         )
         clauses = []
         params = {}
-        if status:
-            if status == 'done':
-                clauses.append("(t.Status = :st OR t.Done = 1)")
-                params['st'] = 'done'
-            else:
-                clauses.append("t.Status = :st")
-                params['st'] = status
-        if planner_id:
+        # Apply lightweight filters if provided
+        if f.get('planner_id'):
             clauses.append("t.planner_id = :pid")
-            params['pid'] = planner_id
-        if ttype:
-            clauses.append("t.Test_Type LIKE :tt")
-            params['tt'] = f"%{ttype}%"
+            params['pid'] = f['planner_id']
+        else:
+            if f.get('week_number'):
+                clauses.append("COALESCE(p.week_number, t.planner_week_number) = :f_week")
+                params['f_week'] = f['week_number']
+            if f.get('department'):
+                clauses.append("COALESCE(p.department, t.planner_department) LIKE :f_dept")
+                params['f_dept'] = f"%{f['department']}%"
+            if f.get('equipment'):
+                clauses.append("COALESCE(p.equipment, t.planner_equipment) LIKE :f_eqp")
+                params['f_eqp'] = f"%{f['equipment']}%"
+            if f.get('schedule_type'):
+                clauses.append("LOWER(CAST(COALESCE(p.schedule_type, t.planner_schedule_type) AS NVARCHAR(MAX))) = :f_sched")
+                params['f_sched'] = str(f['schedule_type']).strip().lower()
+        if f.get('status'):
+            st = str(f['status']).strip().lower()
+            if st in ('completed', 'done'):
+                clauses.append("(COALESCE(t.Done,0) = 1 OR LOWER(TRIM(COALESCE(t.Status,''))) IN ('completed','done'))")
+            elif st in ('ongoing', 'todo'):
+                clauses.append("(COALESCE(t.Done,0) = 0 AND LOWER(TRIM(COALESCE(t.Status,''))) IN ('ongoing','todo',''))")
+            else:
+                clauses.append("LOWER(LTRIM(RTRIM(COALESCE(CAST(t.Status AS NVARCHAR(MAX)), '')))) = :f_status")
+                params['f_status'] = st
+        if f.get('alarm_level'):
+            clauses.append("LOWER(CAST(t.Alarm_Level AS NVARCHAR(MAX))) = :f_alarm")
+            params['f_alarm'] = str(f['alarm_level']).strip().lower()
         if clauses:
             base += " WHERE " + " AND ".join(clauses)
         base += " ORDER BY t.Testing_ID DESC OFFSET 0 ROWS FETCH NEXT 200 ROWS ONLY"
-        res = conn.execute(text(base), params)
+        res = conn.execute(text(base), params).mappings()
+        tasks = [_row_to_task_dict(r) for r in res]
+        # Also include pm_date and schedule_type fields expected by template
+        # (match behavior of _fetch_tasks_for_slug)
+        res2 = conn.execute(text(base), params).mappings()
         tasks = []
-        for r in res.mappings():
-            tasks.append(_row_to_task_dict(r))
-    # Render
-    return render_template('technician/dashboard.html', tasks=tasks, status=status)
+        for r in res2:
+            d = _row_to_task_dict(r)
+            d.update({
+                'pm_date': r['pm_date'],
+                'schedule_type': r['schedule_type'],
+            })
+            tasks.append(d)
+
+        # Attachments for visible tasks
+        if tasks:
+            ids = [t['id'] for t in tasks]
+            in_binds = {f"aid{i}": ids[i] for i in range(len(ids))}
+            inlist = ", ".join(":" + k for k in in_binds.keys())
+            att_sql = text(
+                f"SELECT testing_id, id, filename FROM CBM_Testing_Attachments WHERE testing_id IN ({inlist}) ORDER BY id DESC"
+            )
+            atts = conn.execute(att_sql, in_binds).fetchall()
+            by_test = {}
+            for testing_id, att_id, filename in atts:
+                by_test.setdefault(testing_id, []).append({
+                    'id': att_id,
+                    'filename': filename,
+                })
+            for t in tasks:
+                t['attachments'] = by_test.get(t['id'], [])
+                t['attachment_count'] = len(t['attachments'])
+
+        # Fetch dropdowns for filters to match per-type pages
+        dep_rows = conn.execute(text(
+            "SELECT DISTINCT CAST(department AS NVARCHAR(255)) AS department "
+            "FROM Planner "
+            "WHERE NULLIF(LTRIM(RTRIM(CAST(department AS NVARCHAR(255)))), '') IS NOT NULL "
+            "ORDER BY CAST(department AS NVARCHAR(255)) ASC"
+        )).fetchall()
+        department_list = [r[0] for r in dep_rows]
+        if f.get('department'):
+            eq_rows = conn.execute(text(
+                "SELECT DISTINCT CAST(equipment AS NVARCHAR(255)) AS equipment "
+                "FROM Planner "
+                "WHERE NULLIF(LTRIM(RTRIM(CAST(equipment AS NVARCHAR(255)))), '') IS NOT NULL "
+                "AND CAST(department AS NVARCHAR(255)) = :dep "
+                "ORDER BY CAST(equipment AS NVARCHAR(255)) ASC"
+            ), {"dep": f['department']}).fetchall()
+        else:
+            eq_rows = conn.execute(text(
+                "SELECT DISTINCT CAST(equipment AS NVARCHAR(255)) AS equipment "
+                "FROM Planner "
+                "WHERE NULLIF(LTRIM(RTRIM(CAST(equipment AS NVARCHAR(255)))), '') IS NOT NULL "
+                "ORDER BY CAST(equipment AS NVARCHAR(255)) ASC"
+            )).fetchall()
+        equipment_list = [r[0] for r in eq_rows]
+    page_title = 'Technician Overview'
+    return render_template('technician/dashboard.html', tasks=tasks, page_title=page_title, filters=f,
+                           department_list=department_list, equipment_list=equipment_list, read_only=True)
 
 
 # Removed: /technician/tasks/<id> detail view
@@ -351,11 +450,47 @@ def task_update(task_id: int):
     notes = (request.form.get('notes') or '').strip()
     done_tested_date = (request.form.get('done_tested_date') or '').strip()
     next_url = request.form.get('next')
+    # Server-side guard: require Done_Tested_Date if marking Completed/Done
+    if status and status.lower() in ('completed', 'done') and not done_tested_date:
+        flash('Please set Done Tested Date when marking as Completed.', 'error')
+        if next_url:
+            from urllib.parse import urlparse
+            parsed = urlparse(next_url)
+            if not parsed.netloc and not parsed.scheme:
+                return redirect(next_url)
+        return redirect(url_for('technician.dashboard'))
     with db.engine.begin() as conn:
         _ensure_schema(conn)
+        # Resolve technician id from session user
+        tech_id_val = None
+        try:
+            u = session.get('user') or {}
+            tech_name = (u.get('name') or '').strip()
+            if tech_name:
+                # Try to find existing technician by Name (trimmed)
+                row = conn.execute(text(
+                    "SELECT TOP 1 CBM_ID FROM CBM_Technician WHERE NULLIF(LTRIM(RTRIM(CAST(Name AS NVARCHAR(MAX)))), '') = :nm ORDER BY CBM_ID DESC"
+                ), {"nm": tech_name}).fetchone()
+                if row and row[0]:
+                    tech_id_val = int(row[0])
+                else:
+                    # Create a minimal technician record
+                    conn.execute(text(
+                        "INSERT INTO CBM_Technician (Name) VALUES (:nm)"
+                    ), {"nm": tech_name})
+                    row2 = conn.execute(text(
+                        "SELECT TOP 1 CBM_ID FROM CBM_Technician WHERE NULLIF(LTRIM(RTRIM(CAST(Name AS NVARCHAR(MAX)))), '') = :nm ORDER BY CBM_ID DESC"
+                    ), {"nm": tech_name}).fetchone()
+                    if row2 and row2[0]:
+                        tech_id_val = int(row2[0])
+        except Exception:
+            tech_id_val = None
         # Only update provided fields
         fields = []
         params = {"tid": task_id}
+        if tech_id_val is not None:
+            fields.append("CBM_Technician_ID = :cbm_tid")
+            params['cbm_tid'] = tech_id_val
         if status:
             fields.append("Status = :st")
             params['st'] = status

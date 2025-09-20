@@ -123,6 +123,24 @@ body {
     gap: 12px;
 }
 .main-content {
+
+    /* Test type chips under progress */
+    .test-chips { margin-top: 6px; }
+    .test-chip {
+        display:inline-flex; align-items:center; gap:6px;
+        padding: 2px 8px; border-radius: 999px; font-size: .80rem;
+        background:#f1f5f9; color:#0f172a; border:1px solid #e2e8f0;
+    }
+    .test-chip .dot { width:8px; height:8px; border-radius:50%; display:inline-block; }
+    .test-chip .name { max-width: 160px; overflow:hidden; text-overflow: ellipsis; white-space:nowrap; }
+    .test-chip .counts { opacity:.8; }
+    .test-chip.is-done { background:#ecfdf5; border-color:#bbf7d0; color:#065f46; }
+    .test-chip.is-done .dot { background:#16a34a; }
+    .test-chip.is-pending { background:#fff7ed; border-color:#fed7aa; color:#9a3412; }
+    .test-chip.is-pending .dot { background:#f59e0b; }
+    .dashboard-page.dark .test-chip { background:#0b1320; border-color:#1f2937; color:#e5e7eb; }
+    .dashboard-page.dark .test-chip.is-done { background:#052e25; border-color:#134e4a; color:#d1fae5; }
+    .dashboard-page.dark .test-chip.is-pending { background:#331b09; border-color:#7c2d12; color:#ffedd5; }
     min-width: 0; /* prevent overflow in grid */
     display: flex;
     flex-direction: column;
@@ -186,10 +204,16 @@ body {
 .sb-top { display:flex; align-items:center; gap:10px; padding: 12px 12px; }
 .sb-toggle { 
     appearance:none; border:1px solid transparent; background: transparent; color: #0f172a; cursor: pointer; border-radius: 8px; padding: 6px;
+    display: inline-grid; place-items: center; min-width: 32px; min-height: 32px;
 }
 .dashboard-page.dark .sb-toggle { color: #e5e7eb; }
 .sb-toggle:hover { background: rgba(15, 23, 42, 0.06); }
 .dashboard-page.dark .sb-toggle:hover { background: rgba(255,255,255,0.08); }
+/* Keyboard focus ring */
+.sb-toggle:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(59,130,246,0.35); }
+/* Animate chevron rotation when collapsed */
+.sb-toggle svg { transition: transform .2s ease; }
+.cbm-sidebar.is-collapsed .sb-toggle svg { transform: rotate(180deg); }
 
 .sb-brand { display:flex; align-items:center; gap:10px; overflow:hidden; }
 .logo { width: 36px; height: 36px; border-radius: 10px; background: linear-gradient(140deg, #0ea5e9, #22c55e); color:#fff; display:grid; place-items:center; font-weight:800; letter-spacing:.5px; box-shadow: inset 0 1px 0 #ffffff55; }

@@ -28,13 +28,14 @@
                 <div class="panel-title" style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
                     <span>Equipment</span>
                     {% if eqid %}
-                    <a href="{{ url_for('main.equipment') }}?search={{ search }}" class="btn-tertiary">Clear selection</a>
+                    <a href="{{ url_for('main.equipment_v3') }}?search={{ search }}" class="btn-tertiary">Clear selection</a>
                     {% endif %}
                 </div>
                 <form method="get" class="auto-filter-form" style="display:flex; gap:8px; align-items:center;">
                     <input class="input" type="text" name="search" placeholder="Search by Name or Department" value="{{ search }}" style="max-width:340px;" />
                     {% if eqid %}<input type="hidden" name="eqid" value="{{ eqid }}" />{% endif %}
                     <button class="btn" type="submit">Search</button>
+                    <a class="btn-tertiary" href="{{ url_for('main.equipment_all') }}">Show all</a>
                 </form>
                 <div style="overflow:auto; margin-top:8px;">
                     <table class="planner-table no-wrap" style="min-width:820px;">
@@ -63,7 +64,7 @@
                                 <td><span class="badge alarm-normal">Normal</span> {{ r.alarm_normal }}</td>
                                 <td>{{ r.last_alarm_date or '-' }}</td>
                                 <td>
-                                    <a class="btn-secondary" href="{{ url_for('main.equipment') }}?search={{ search }}&eqid={{ r.id }}#history">View</a>
+                                    <a class="btn-secondary" href="{{ url_for('main.equipment_v3') }}?search={{ search }}&eqid={{ r.id }}#history">View</a>
                                 </td>
                             </tr>
                             {% else %}
@@ -79,7 +80,7 @@
                 {% if selected_eq %}
                     <div style="margin-bottom:8px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
                         <div style="font-weight:700;">{{ selected_eq.machine }} <span class="pill">{{ selected_eq.department }}</span></div>
-                        <a class="btn-tertiary" href="{{ url_for('main.equipment') }}?search={{ search }}">Close</a>
+                        <a class="btn-tertiary" href="{{ url_for('main.equipment_v3') }}?search={{ search }}">Close</a>
                     </div>
                     <!-- Trend by Testing Type (Scatter) -->
                     {% if history %}
@@ -122,7 +123,7 @@
                                     <td>{{ h.notes or '' }}</td>
                                 </tr>
                                 {% else %}
-                                <tr><td colspan="7" style="text-align:center; color:#666;">No alarm records</td></tr>
+                                <tr><td colspan="7" style="text-align:center; color:#666;">No testing records for this equipment.</td></tr>
                                 {% endfor %}
                             </tbody>
                         </table>
@@ -170,7 +171,12 @@
                     try { history = JSON.parse(dataEl.textContent || '[]') || []; } catch(_) { history = []; }
                     // Build unique test types and datasets
                     const toStr = (v) => (v == null ? '' : String(v));
-                    const types = Array.from(new Set(history.map(h => toStr(h.test_type).trim()).filter(Boolean))).sort((a,b)=>a.localeCompare(b));
+                    // Build y-axis categories from normalized labels (blank -> 'Other') so points aren't dropped
+                    const typeLabels = history.map(h => {
+                        const t = toStr(h.test_type).trim();
+                        return t || 'Other';
+                    });
+                    const types = Array.from(new Set(typeLabels)).sort((a,b)=>a.localeCompare(b));
                     // Populate filter
                     const ddl = document.getElementById('typeFilter');
                     if (ddl) {
@@ -208,7 +214,7 @@
                     }
                     history.forEach(h => {
                         const t = toStr(h.test_type).trim() || 'Other';
-                        if (!types.includes(t)) return; // safety
+                        // types includes 'Other' if any missing labels; keep all
                         const y = t; // use category label directly for alignment
                         const x = parseDateMs(h.done_tested_date, h.year, h.week);
                         const key = normAlarm(h.alarm_level, h.status);
@@ -240,7 +246,8 @@
                                             const h = r._meta || {};
                                             const d = new Date(r.x);
                                             const dstr = isNaN(d.getTime()) ? '' : d.toISOString().slice(0,10);
-                                            const typeLbl = types[r.y] || r._type || '';
+                                            // r.y is already the category label (string). Don't index into 'types' with a string.
+                                            const typeLbl = (typeof r.y === 'string' && r.y) || r._type || (h.test_type || '');
                                             const lvl = tt.dataset.label || '';
                                             const id = h.testing_id ? ('#' + h.testing_id) : '';
                                             const st = h.status ? (' — ' + h.status) : '';

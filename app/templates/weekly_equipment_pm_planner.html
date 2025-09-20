@@ -5,9 +5,9 @@
     <form method="POST" action="/planner" class="planner-form" id="plannerForm">
         <div class="form-group">
             <label for="week_number">Week Number:</label>
-            <input type="number" id="week_number" name="week_number" min="1" max="52" required>
+            <input type="number" id="week_number" name="week_number" min="1" max="52" required value="{{ default_week if default_week is not none else '' }}">
             <label for="year">Year:</label>
-            <input type="number" id="year" name="year" required>
+            <input type="number" id="year" name="year" required value="{{ default_year if default_year is not none else '' }}">
         </div>
 
         <table id="plannerTable" class="planner-table">
@@ -19,6 +19,7 @@
                     <th>Day</th>
                     <th>Testing Type</th>
                     <th>PM Date</th>
+                    <th>PM Week</th>
                     <th>Schedule Type</th>
                     <th>Proposed Target Date</th>
                 </tr>
@@ -57,6 +58,7 @@
                         </div>
                     </td>
                     <td><input type="date" name="pm_date_template" id="pm_date_template" required disabled></td>
+                    <td><input type="number" name="pm_week_template" id="pm_week_template" readonly disabled></td>
                     <td>
                         <select name="schedule_type_template" id="schedule_type_template" required disabled onchange="updateScheduleColor(this)">
                             <option value="">Select</option>
@@ -86,8 +88,8 @@
                         </select>
                         <input type="text" name="equipment_new_0" id="equipment_new_0" placeholder="Enter new equipment" class="hidden-input">
                     </td>
-                    <td><input type="date" name="date_0" id="date_0" required onchange="updateDay(this)" readonly tabindex="-1" aria-readonly="true" style="pointer-events:none; background:#f7f7f7;"></td>
-                    <td><input type="text" name="day_0" id="day_0" placeholder="Day" readonly tabindex="-1" aria-readonly="true" style="pointer-events:none; background:#f7f7f7;"></td>
+                    <td><input type="date" name="date_0" id="date_0" required onchange="updateDay(this)" readonly tabindex="-1" aria-readonly="true" style="pointer-events:none; background:#f7f7f7;" value="{{ default_date if default_date is not none else '' }}"></td>
+                    <td><input type="text" name="day_0" id="day_0" placeholder="Day" readonly tabindex="-1" aria-readonly="true" style="pointer-events:none; background:#f7f7f7;" value="{{ default_day if default_day is not none else '' }}"></td>
                     <td>
                         <div class="testing-grid">
                             <label><input type="checkbox" name="testing_0" value="Vibration Analysis"> <span class="tag va">Vibration Analysis</span></label>
@@ -101,6 +103,7 @@
                         </div>
                     </td>
                     <td><input type="date" name="pm_date_0" id="pm_date_0" required></td>
+                    <td><input type="number" name="pm_week_0" id="pm_week_0" readonly tabindex="-1" aria-readonly="true" style="pointer-events:none; background:#f7f7f7;"></td>
                     <td>
                         <select name="schedule_type_0" id="schedule_type_0" required onchange="updateScheduleColor(this)">
                             <option value="">Select</option>
@@ -132,61 +135,18 @@
     </div>
     </div>
 
-{% if recent_planners and recent_planners|length > 0 %}
-<section class="planner-container" style="margin-top: 20px;">
-    <div style="display:flex; align-items:center; justify-content:space-between; gap: 12px; flex-wrap: wrap;">
-        <h3 style="margin: 0;">Planner Entries</h3>
-        <form id="filterForm" method="GET" action="/planner" style="display:flex; align-items:center; gap:8px;">
-            <label for="filter_week">Week:</label>
-            <input type="number" min="1" max="52" id="filter_week" name="filter_week" value="{{ filter_week }}" style="width: 5rem;" placeholder="1-52">
-            <label for="filter_year">Year:</label>
-            <input type="number" id="filter_year" name="filter_year" value="{{ filter_year }}" style="width: 6rem;">
-            <label for="filter_department">Department:</label>
-            <select id="filter_department" name="filter_department">
-                <option value="">All</option>
-                {% for dept in department_list %}
-                    <option value="{{ dept }}" {% if filter_department == dept %}selected{% endif %}>{{ dept }}</option>
-                {% endfor %}
-            </select>
-            <button type="submit" class="btn-primary">Filter</button>
-            <a href="/planner" class="btn-secondary" style="text-decoration:none; padding:6px 10px; border:1px solid #aaa; border-radius:4px;">Reset</a>
-        </form>
-    </div>
-    <table class="planner-table">
-        <thead>
-            <tr>
-                <th>ID</th>
-                <th>Week</th>
-                <th>Year</th>
-                <th>Department</th>
-                <th>Equipment</th>
-                <th>Date</th>
-                <th>Day</th>
-                <th>PM Date</th>
-                <th>PM Week</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for p in recent_planners %}
-            <tr>
-                <td>{{ p.id }}</td>
-                <td>{{ p.week_number }}</td>
-                <td>{{ p.year }}</td>
-                <td>{{ p.department }}</td>
-                <td>{{ p.equipment }}</td>
-                <td>{{ p.date }}</td>
-                <td>{{ p.day }}</td>
-                <td>{{ p.pm_date or '' }}</td>
-                <td>{{ p.pm_week_number if p.pm_week_number is not none else '' }}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-</section>
-{% endif %}
+{# Planner Entries table removed per request #}
 
 <script id="deptEquipData" type="application/json">{{ department_equipment_map | tojson | safe }}</script>
 <script>
+    // Return today's date in local timezone as YYYY-MM-DD (no UTC shift)
+    function todayLocalStr() {
+        const d = new Date();
+        // Normalize to local date by removing timezone offset
+        d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+        return d.toISOString().slice(0, 10);
+    }
+
     // Populate Day field from Date input and optionally set week/year.
     function getISOWeek(d) {
         // d: Date object
@@ -319,6 +279,7 @@
             date: document.getElementById('date_' + i),
             day: document.getElementById('day_' + i),
             pm: document.getElementById('pm_date_' + i),
+            pmWeek: document.getElementById('pm_week_' + i),
             sched: document.getElementById('schedule_type_' + i),
             target: document.getElementById('proposed_target_date_' + i),
             tests: Array.from(document.querySelectorAll('input[name="testing_' + i + '"]')),
@@ -396,12 +357,14 @@
     const equipNew = document.getElementById('equipment_new_' + i);
         if (deptSel) deptSel.addEventListener('change', () => onDepartmentChange(deptSel, 'equipment_' + i, 'equipment_new_' + i));
         if (equipSel) equipSel.addEventListener('change', () => onEquipmentChange(equipSel, 'equipment_new_' + i));
-        const dateEl = document.getElementById('date_' + i);
-        const dayEl = document.getElementById('day_' + i);
+    const dateEl = document.getElementById('date_' + i);
+    const dayEl = document.getElementById('day_' + i);
+    const pmEl = document.getElementById('pm_date_' + i);
+    const pmWeekEl = document.getElementById('pm_week_' + i);
     const schedEl = document.getElementById('schedule_type_' + i);
         if (dateEl) {
             // Prefill with today and mirror non-editable behavior like first row
-            const todayStr = new Date().toISOString().slice(0,10);
+            const todayStr = todayLocalStr();
             if (!dateEl.value) dateEl.value = todayStr;
             // Block interaction and tabbing
             dateEl.readOnly = true;
@@ -413,6 +376,18 @@
             updateDay(dateEl);
             // Still wire change for programmatic updates (if any)
             dateEl.addEventListener('change', () => updateDay(dateEl));
+        }
+        if (pmWeekEl) {
+            pmWeekEl.readOnly = true;
+            pmWeekEl.setAttribute('tabindex', '-1');
+            pmWeekEl.setAttribute('aria-readonly', 'true');
+            pmWeekEl.style.pointerEvents = 'none';
+            pmWeekEl.style.background = '#f7f7f7';
+        }
+        if (pmEl) {
+            // Initialize and wire PM week computation
+            updatePmWeekFor(pmEl);
+            pmEl.addEventListener('change', () => updatePmWeekFor(pmEl));
         }
         if (dayEl) {
             dayEl.readOnly = true;
@@ -456,10 +431,15 @@
             populateEquipmentOptions(document.getElementById('equipment_template'), deptTemplate.value);
         }
             // Disable past dates and initialize day fields for any date inputs on page
-            const todayStr = new Date().toISOString().slice(0,10);
+            const todayStr = todayLocalStr();
             document.querySelectorAll('input[type="date"]').forEach(d => {
                 try { d.min = todayStr; } catch(e) {}
                 if (d.value) updateDay(d);
+            });
+            // Initialize PM week numbers and wire changes
+            document.querySelectorAll('input[id^="pm_date_"]').forEach(pm => {
+                if (pm.value) updatePmWeekFor(pm);
+                pm.addEventListener('change', () => updatePmWeekFor(pm));
             });
 
         // Prefill current year/week and today's input date for the first row
@@ -474,8 +454,10 @@
                 yearInput.value = now.getFullYear();
             }
             const date0 = document.getElementById('date_0');
-            if (date0 && !date0.value) {
-                date0.value = todayStr;
+            if (date0) {
+                // Always set to today's local date to avoid stale default from previous day
+                const todayStr0 = todayLocalStr();
+                date0.value = todayStr0;
                 updateDay(date0); // this will also populate the Day and ensure week/year
             }
         } catch (e) { /* ignore */ }
@@ -502,6 +484,20 @@
     });
 
     // --- Duplicate checking ---
+    function updatePmWeekFor(pmDateInput) {
+        try {
+            if (!pmDateInput) return;
+            const val = pmDateInput.value;
+            const idx = pmDateInput.id.replace('pm_date_', '');
+            const pmWeekInput = document.getElementById('pm_week_' + idx);
+            if (!pmWeekInput) return;
+            if (!val) { pmWeekInput.value = ''; return; }
+            const dt = new Date(val + 'T00:00:00');
+            pmWeekInput.value = getISOWeek(dt);
+        } catch (e) {
+            console.warn('updatePmWeekFor error', e);
+        }
+    }
     async function checkDuplicateForRow(i) {
         const r = rowSelectors(i);
         if (!r.dept || !r.equip || !r.pm || !r.sched) return;
@@ -540,7 +536,7 @@
         showDupModal(lines.join(''));
     }
 
-    function showDupModal(html) {
+        function showDupModal(html) {
         const modal = document.getElementById('dupModal');
         const body = document.getElementById('dupBody');
         const btn = document.getElementById('dupDismiss');
@@ -551,5 +547,54 @@
         btn.addEventListener('click', close);
         modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
     }
+
+        // Add Test Type modal wiring (reuse planner_entries behavior)
+        document.addEventListener('click', function(e) {
+                const target = e.target.closest('[data-action="open-modal"]');
+                if (!target) return;
+                const pid = target.getAttribute('data-pid');
+                const modal = document.getElementById('addTypeModal');
+                if (!modal) return;
+                document.getElementById('addTypePlannerId').value = pid;
+                modal.classList.remove('hidden');
+        });
+        document.addEventListener('click', function(e) {
+                if (e.target.getAttribute('data-action') === 'close-modal') {
+                        const modal = document.getElementById('addTypeModal');
+                        if (modal) modal.classList.add('hidden');
+                }
+        });
 </script>
+
+<!-- Add Test Type Modal (shared with planner_entries UX) -->
+<div id="addTypeModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-hidden="true">
+    <div class="modal-dialog" role="document" aria-labelledby="addTypeTitle">
+        <header class="modal-header">
+            <h3 id="addTypeTitle">Add Testing Type</h3>
+            <button type="button" class="close-btn" aria-label="Close modal" data-action="close-modal">×</button>
+        </header>
+        <form id="addTypeForm" method="post" action="/planner/add_test_type" class="modal-form">
+            <input type="hidden" name="planner_id" id="addTypePlannerId">
+            <input type="hidden" name="next" value="/planner">
+            <label class="field">
+                <span class="field-label">Select type</span>
+                <select name="test_type" id="addTypeSelect" required>
+                    <option value="">-- Choose --</option>
+                    <option>Vibration Analysis</option>
+                    <option>Oil Analysis</option>
+                    <option>Thermal Imaging</option>
+                    <option>Ultrasonic Analysis</option>
+                    <option>Motor Dynamic Analysis</option>
+                    <option>Ultrasonic Leak Detection</option>
+                    <option>Dynamic Balancing</option>
+                    <option>Other</option>
+                </select>
+            </label>
+            <div class="actions">
+                <button type="button" class="btn btn-ghost" data-action="close-modal">Cancel</button>
+                <button type="submit" class="btn btn-primary">Add</button>
+            </div>
+        </form>
+    </div>
+    </div>
 {% endblock %}

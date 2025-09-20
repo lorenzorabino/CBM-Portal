@@ -45,6 +45,27 @@
 			"type": "shell",
 			"command": "$env:MSSQL_CONN = if ($env:MSSQL_CONN) { $env:MSSQL_CONN } else { 'mssql+pyodbc://sa:pmdatascience@172.31.3.40,1433/CBM2?driver=ODBC+Driver+17+for+SQL+Server' }; .\\.venv\\Scripts\\python.exe .\\scripts\\alter_cbm2_add_planner_fields.py",
 			"group": "build"
+		},
+		{
+			"label": "Run Flask dev server (ad-hoc)",
+			"type": "shell",
+			"command": "& ./scripts/run.ps1",
+			"isBackground": true,
+			"group": "build"
+		},
+		{
+			"label": "Run Flask dev server",
+			"type": "shell",
+			"command": "& ./scripts/run.ps1",
+			"isBackground": true,
+			"group": "build"
+		},
+		{
+			"label": "Run Flask dev server (ad-hoc)",
+			"type": "shell",
+			"command": "& ./scripts/run.ps1",
+			"isBackground": true,
+			"group": "build"
 		}
 	]
 }
